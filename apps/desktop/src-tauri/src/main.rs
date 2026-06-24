@@ -539,6 +539,25 @@ fn update_relaunch(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("only http and https URLs can be opened externally".to_owned());
+    }
+
+    let output = Command::new("xdg-open")
+        .arg(&url)
+        .output()
+        .map_err(|err| format!("failed to start xdg-open: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "xdg-open failed: {}",
+            command_output_detail(&output.stderr, &output.stdout)
+        ));
+    }
+    Ok(())
+}
+
 fn update_check_blocking() -> Result<UpdateStatus, String> {
     Ok(resolve_update_candidate()?.status)
 }
@@ -2646,6 +2665,7 @@ fn main() {
             update_prepare,
             update_install,
             update_relaunch,
+            open_external_url,
             daemon_handoff_status,
             daemon_handoff_start,
             github_sync_status,

@@ -66,8 +66,16 @@ type LogEntry = {
 
 type AppView = "profiles" | "secrets" | "diagnostics" | "logs" | "settings";
 
+type SettingsSection = "updates" | "cloud_sync" | "general" | "security";
+
 type ActivityItem = {
   id: AppView;
+  label: string;
+  icon: LucideIcon;
+};
+
+type SettingsSectionItem = {
+  id: SettingsSection;
   label: string;
   icon: LucideIcon;
 };
@@ -288,6 +296,13 @@ const activityItems: ActivityItem[] = [
 
 const settingsActivityItem: ActivityItem = { id: "settings", label: "Settings", icon: SettingsIcon };
 
+const settingsSectionItems: SettingsSectionItem[] = [
+  { id: "updates", label: "Updates", icon: Download },
+  { id: "cloud_sync", label: "Cloud Sync", icon: Cloud },
+  { id: "general", label: "General", icon: SettingsIcon },
+  { id: "security", label: "Security", icon: Shield },
+];
+
 const viewCopy: Record<AppView, { title: string; eyebrow: string }> = {
   profiles: { title: "Profiles", eyebrow: "Connection control" },
   secrets: { title: "Secrets", eyebrow: "OS keyring" },
@@ -437,6 +452,8 @@ export default function App() {
   const [profileDir, setProfileDir] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<AppView>("profiles");
+  const [activeSettingsSection, setActiveSettingsSection] =
+    useState<SettingsSection>("updates");
   const [createProfileTabOpen, setCreateProfileTabOpen] = useState(false);
   const [createProfileDraft, setCreateProfileDraft] = useState<CreateProfileDraft>(
     initialCreateProfileDraft,
@@ -1308,6 +1325,7 @@ export default function App() {
         <ActivityBar activeView={activeView} state={state.daemon.state} onSelect={setActiveView} />
         <WorkbenchSidebar
           activeView={activeView}
+          activeSettingsSection={activeSettingsSection}
           profile={profile}
           profiles={profiles}
           profileDir={profileDir}
@@ -1316,6 +1334,7 @@ export default function App() {
           daemon={state.daemon}
           canSelectProfile={canConnect}
           createProfileTabOpen={createProfileTabOpen}
+          onSelectSettingsSection={setActiveSettingsSection}
           onCreateProfile={openCreateProfileTab}
         />
         <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -1331,6 +1350,7 @@ export default function App() {
           <div className="min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-6">
             <WorkbenchView
               activeView={activeView}
+              activeSettingsSection={activeSettingsSection}
               profile={profile}
               profiles={profiles}
               profileDir={profileDir}
@@ -1365,6 +1385,7 @@ export default function App() {
               onRefreshUpdateStatus={() => refreshUpdateStatus(false)}
               onPrepareUpdate={prepareUpdate}
               onInstallPreparedUpdate={installPreparedUpdate}
+              onSelectSettingsSection={setActiveSettingsSection}
               onDuplicateProfile={duplicateProfile}
               onRenameProfile={renameProfile}
               onDeleteProfile={deleteProfile}
@@ -1476,6 +1497,7 @@ function ActivityBarButton({
 
 function WorkbenchSidebar({
   activeView,
+  activeSettingsSection,
   profile,
   profiles,
   profileDir,
@@ -1484,9 +1506,11 @@ function WorkbenchSidebar({
   daemon,
   canSelectProfile,
   createProfileTabOpen,
+  onSelectSettingsSection,
   onCreateProfile,
 }: {
   activeView: AppView;
+  activeSettingsSection: SettingsSection;
   profile: string;
   profiles: ProfileItem[];
   profileDir: string | null;
@@ -1495,6 +1519,7 @@ function WorkbenchSidebar({
   daemon: DaemonStatus;
   canSelectProfile: boolean;
   createProfileTabOpen: boolean;
+  onSelectSettingsSection: (section: SettingsSection) => void;
   onCreateProfile: () => void;
 }) {
   return (
@@ -1554,13 +1579,14 @@ function WorkbenchSidebar({
             <div className="px-1 text-[11px] font-bold uppercase tracking-wide text-[#bdc3c7]">
               Settings
             </div>
-            <button
-              type="button"
-              className="flex w-full items-center gap-3 rounded-md bg-[#2c3e50] px-3 py-3 text-left text-sm text-white"
-            >
-              <Cloud className="h-4 w-4 text-primary" />
-              <span className="min-w-0 flex-1 truncate font-semibold">Cloud Sync</span>
-            </button>
+            {settingsSectionItems.map((item) => (
+              <SettingsSectionButton
+                key={item.id}
+                item={item}
+                active={activeSettingsSection === item.id}
+                onSelect={onSelectSettingsSection}
+              />
+            ))}
           </div>
         ) : null}
       </div>
@@ -1691,6 +1717,39 @@ function SidebarRow({
   );
 }
 
+function SettingsSectionButton({
+  item,
+  active,
+  surface = "dark",
+  onSelect,
+}: {
+  item: SettingsSectionItem;
+  active: boolean;
+  surface?: "dark" | "light";
+  onSelect: (section: SettingsSection) => void;
+}) {
+  const Icon = item.icon;
+  const className =
+    surface === "dark"
+      ? active
+        ? "bg-[#2c3e50] text-white"
+        : "text-[#ecf0f1] hover:bg-[#2c3e50]"
+      : active
+        ? "bg-[#2c3e50] text-white"
+        : "text-foreground hover:bg-muted";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item.id)}
+      className={`flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${className}`}
+    >
+      <Icon className="h-4 w-4 shrink-0 text-primary" />
+      <span className="min-w-0 flex-1 truncate font-semibold">{item.label}</span>
+    </button>
+  );
+}
+
 function WorkbenchHeader({
   activeView,
   daemon,
@@ -1806,6 +1865,7 @@ function HeaderStatusChip({
 
 function WorkbenchView({
   activeView,
+  activeSettingsSection,
   profile,
   profiles,
   profileDir,
@@ -1840,6 +1900,7 @@ function WorkbenchView({
   onRefreshUpdateStatus,
   onPrepareUpdate,
   onInstallPreparedUpdate,
+  onSelectSettingsSection,
   onDuplicateProfile,
   onRenameProfile,
   onDeleteProfile,
@@ -1849,6 +1910,7 @@ function WorkbenchView({
   createProfile,
 }: {
   activeView: AppView;
+  activeSettingsSection: SettingsSection;
   profile: string;
   profiles: ProfileItem[];
   profileDir: string | null;
@@ -1883,6 +1945,7 @@ function WorkbenchView({
   onRefreshUpdateStatus: () => Promise<void>;
   onPrepareUpdate: () => Promise<void>;
   onInstallPreparedUpdate: () => Promise<void>;
+  onSelectSettingsSection: (section: SettingsSection) => void;
   onDuplicateProfile: () => Promise<void>;
   onRenameProfile: (newName: string) => Promise<void>;
   onDeleteProfile: (syncTombstone?: boolean) => Promise<void>;
@@ -1902,6 +1965,7 @@ function WorkbenchView({
   if (activeView === "settings") {
     return (
       <SettingsView
+        activeSection={activeSettingsSection}
         profile={profile}
         profileDir={profileDir}
         githubSyncState={githubSyncState}
@@ -1918,6 +1982,7 @@ function WorkbenchView({
         onRefreshUpdateStatus={onRefreshUpdateStatus}
         onPrepareUpdate={onPrepareUpdate}
         onInstallPreparedUpdate={onInstallPreparedUpdate}
+        onSelectSection={onSelectSettingsSection}
       />
     );
   }
@@ -2807,6 +2872,7 @@ function LogsView({ logs }: { logs: LogEntry[] }) {
 }
 
 function SettingsView({
+  activeSection,
   profile,
   profileDir,
   githubSyncState,
@@ -2823,7 +2889,9 @@ function SettingsView({
   onRefreshUpdateStatus,
   onPrepareUpdate,
   onInstallPreparedUpdate,
+  onSelectSection,
 }: {
+  activeSection: SettingsSection;
   profile: string;
   profileDir: string | null;
   githubSyncState: GithubSyncState;
@@ -2840,61 +2908,83 @@ function SettingsView({
   onRefreshUpdateStatus: () => Promise<void>;
   onPrepareUpdate: () => Promise<void>;
   onInstallPreparedUpdate: () => Promise<void>;
+  onSelectSection: (section: SettingsSection) => void;
 }) {
   return (
     <div className="workbench-surface grid gap-4">
-      <UpdateSettings
-        state={updateState}
-        busy={updateBusy}
-        operation={updateOperation}
-        onRefresh={onRefreshUpdateStatus}
-        onPrepare={onPrepareUpdate}
-        onInstall={onInstallPreparedUpdate}
-      />
-
-      <GithubSyncSettings
-        state={githubSyncState}
-        busy={githubSyncBusy}
-        operation={githubSyncOperation}
-        onStartLogin={onStartGithubSyncLogin}
-        onInitManifest={onInitGithubSyncManifest}
-        onUploadProfiles={onUploadGithubSyncProfiles}
-        onDownloadProfiles={onDownloadGithubSyncProfiles}
-      />
-
-      <GithubSyncHistoryPanel state={githubSyncHistoryState} />
-
-      <section className="rounded-md bg-card p-4">
-        <h2 className="mb-3 text-sm font-semibold text-foreground">General</h2>
-        <div className="divide-y divide-border rounded-md bg-muted">
-          <SettingItem
-            label="Profile directory"
-            description="Local directory searched for VPN profile TOML files."
-            value={profileDir ?? "Unavailable"}
+      <div className="grid gap-2 rounded-md bg-card p-3 md:hidden">
+        {settingsSectionItems.map((item) => (
+          <SettingsSectionButton
+            key={item.id}
+            item={item}
+            active={activeSection === item.id}
+            surface="light"
+            onSelect={onSelectSection}
           />
-          <SettingItem
-            label="Selected profile"
-            description="Current profile selection used by the connect workflow."
-            value={profile || "None"}
-          />
-        </div>
-      </section>
+        ))}
+      </div>
 
-      <section className="rounded-md bg-card p-4">
-        <h2 className="mb-3 text-sm font-semibold text-foreground">Security</h2>
-        <div className="divide-y divide-border rounded-md bg-muted">
-          <SettingItem
-            label="VPN password storage"
-            description="Saved passwords are stored in the OS keyring."
-            value="OS keyring"
+      {activeSection === "updates" ? (
+        <UpdateSettings
+          state={updateState}
+          busy={updateBusy}
+          operation={updateOperation}
+          onRefresh={onRefreshUpdateStatus}
+          onPrepare={onPrepareUpdate}
+          onInstall={onInstallPreparedUpdate}
+        />
+      ) : null}
+
+      {activeSection === "cloud_sync" ? (
+        <>
+          <GithubSyncSettings
+            state={githubSyncState}
+            busy={githubSyncBusy}
+            operation={githubSyncOperation}
+            onStartLogin={onStartGithubSyncLogin}
+            onInitManifest={onInitGithubSyncManifest}
+            onUploadProfiles={onUploadGithubSyncProfiles}
+            onDownloadProfiles={onDownloadGithubSyncProfiles}
           />
-          <SettingItem
-            label="Profile file boundary"
-            description="Profile TOML files hold connection configuration only."
-            value="No secrets"
-          />
-        </div>
-      </section>
+          <GithubSyncHistoryPanel state={githubSyncHistoryState} />
+        </>
+      ) : null}
+
+      {activeSection === "general" ? (
+        <section className="rounded-md bg-card p-4">
+          <h2 className="mb-3 text-sm font-semibold text-foreground">General</h2>
+          <div className="divide-y divide-border rounded-md bg-muted">
+            <SettingItem
+              label="Profile directory"
+              description="Local directory searched for VPN profile TOML files."
+              value={profileDir ?? "Unavailable"}
+            />
+            <SettingItem
+              label="Selected profile"
+              description="Current profile selection used by the connect workflow."
+              value={profile || "None"}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {activeSection === "security" ? (
+        <section className="rounded-md bg-card p-4">
+          <h2 className="mb-3 text-sm font-semibold text-foreground">Security</h2>
+          <div className="divide-y divide-border rounded-md bg-muted">
+            <SettingItem
+              label="VPN password storage"
+              description="Saved passwords are stored in the OS keyring."
+              value="OS keyring"
+            />
+            <SettingItem
+              label="Profile file boundary"
+              description="Profile TOML files hold connection configuration only."
+              value="No secrets"
+            />
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -2991,7 +3081,7 @@ function UpdateSettings({
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 {detail?.releaseUrl ? (
-                  <Button type="button" variant="outline" onClick={() => openExternal(detail.releaseUrl!)}>
+                  <Button type="button" variant="outline" onClick={() => void openExternal(detail.releaseUrl!)}>
                     <ExternalLink className="h-4 w-4" />
                     Release
                   </Button>
@@ -4110,7 +4200,12 @@ async function copyText(value: string) {
   }
 }
 
-function openExternal(url: string) {
+async function openExternal(url: string) {
+  if (isTauriRuntime()) {
+    await invoke("open_external_url", { url });
+    return;
+  }
+
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
