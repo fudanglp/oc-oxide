@@ -2111,6 +2111,9 @@ fn tray_status_text(state: DaemonState, profile: Option<&str>, interface: Option
 fn main() {
     tauri::Builder::default()
         .manage(DesktopState::default())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .on_window_event(|window, event| {
             if window.label() == MAIN_WINDOW_LABEL {
                 if let WindowEvent::CloseRequested { api, .. } = event {

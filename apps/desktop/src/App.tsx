@@ -3725,15 +3725,12 @@ function AuthDialog({
   const passwordField = prompt ? vpnPasswordPromptField(prompt) : null;
 
   return (
-    <Dialog
-      open={Boolean(prompt)}
-      onOpenChange={(open) => {
-        if (!open && prompt && !busy) {
-          void onCancel();
-        }
-      }}
-    >
-      <DialogContent>
+    <Dialog open={Boolean(prompt)} onOpenChange={() => undefined}>
+      <DialogContent
+        showCloseButton={false}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="h-4 w-4" />
