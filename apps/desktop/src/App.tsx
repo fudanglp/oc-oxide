@@ -1224,41 +1224,12 @@ export default function App() {
   }
 
   async function installPreparedUpdate() {
-    let manifestPath = updateState.detail?.manifestPath;
-    if (!manifestPath) {
-      setUpdateBusy(true);
-      setUpdateOperation("downloading");
-      try {
-        const detail = await invoke<UpdateStatus>("update_prepare");
-        manifestPath = detail.manifestPath;
-        setUpdateState({
-          status: "ready",
-          detail,
-          message: detail.message,
-          lastCheckedAt: Date.now(),
-        });
-      } catch (error) {
-        const message = formatError(error);
-        setUpdateState((current) => ({
-          ...current,
-          status: "error",
-          message,
-          lastCheckedAt: Date.now(),
-        }));
-        dispatch({ type: "log", level: "warn", message });
-        setUpdateBusy(false);
-        setUpdateOperation("idle");
-        return;
-      } finally {
-        setUpdateBusy(false);
-      }
-    }
-
+    const manifestPath = updateState.detail?.manifestPath;
     if (!manifestPath) {
       setUpdateState((current) => ({
         ...current,
         status: "error",
-        message: "update manifest was not prepared",
+        message: "Download and verify the update before installing.",
       }));
       setUpdateOperation("idle");
       return;
@@ -3005,9 +2976,9 @@ function UpdateSettings({
   onInstall: () => Promise<void>;
 }) {
   const detail = state.detail;
-  const prepared = Boolean(detail?.manifestPath);
+  const prepared = Boolean(detail?.manifestPath && detail.artifactPath && detail.sha256Path);
   const canPrepare = Boolean(detail?.updateAvailable) && !busy && !prepared;
-  const canInstall = Boolean(detail?.updateAvailable) && !busy;
+  const canInstall = Boolean(detail?.updateAvailable) && !busy && prepared;
 
   return (
     <section className="rounded-md bg-card p-4">
@@ -3125,14 +3096,16 @@ function UpdateSettings({
                       Download
                     </Button>
                   ) : null}
-                  <Button type="button" disabled={!canInstall} onClick={() => void onInstall()}>
-                    {operation === "installing" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Upload className="h-4 w-4" />
-                    )}
-                    Install & Relaunch
-                  </Button>
+                  {prepared ? (
+                    <Button type="button" disabled={!canInstall} onClick={() => void onInstall()}>
+                      {operation === "installing" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                      Install & Relaunch
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>
