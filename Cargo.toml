@@ -24,16 +24,16 @@ repository = "https://github.com/fudanglp/oc-oxide"
 authors = ["oc-oxide contributors"]
 
 [workspace.dependencies]
-oc-oxide-openconnect-sys = { path = "crates/oc-oxide-openconnect-sys", version = "0.1.2" }
-oc-oxide-tunnel = { path = "crates/oc-oxide-tunnel", version = "0.1.2" }
-oc-oxide-auth = { path = "crates/oc-oxide-auth", version = "0.1.2" }
-oc-oxide-net = { path = "crates/oc-oxide-net", version = "0.1.2" }
-oc-oxide-dns = { path = "crates/oc-oxide-dns", version = "0.1.2" }
-oc-oxide-policy = { path = "crates/oc-oxide-policy", version = "0.1.2" }
-oc-oxide-config = { path = "crates/oc-oxide-config", version = "0.1.2" }
-oc-oxide-sync = { path = "crates/oc-oxide-sync", version = "0.1.2" }
-oc-oxide-ipc = { path = "crates/oc-oxide-ipc", version = "0.1.2" }
-oc-oxide-daemon = { path = "bins/oc-oxide-daemon", version = "0.1.2" }
+oc-oxide-openconnect-sys = { path = "crates/oc-oxide-openconnect-sys" }
+oc-oxide-tunnel = { path = "crates/oc-oxide-tunnel" }
+oc-oxide-auth = { path = "crates/oc-oxide-auth" }
+oc-oxide-net = { path = "crates/oc-oxide-net" }
+oc-oxide-dns = { path = "crates/oc-oxide-dns" }
+oc-oxide-policy = { path = "crates/oc-oxide-policy" }
+oc-oxide-config = { path = "crates/oc-oxide-config" }
+oc-oxide-sync = { path = "crates/oc-oxide-sync" }
+oc-oxide-ipc = { path = "crates/oc-oxide-ipc" }
+oc-oxide-daemon = { path = "bins/oc-oxide-daemon" }
 
 # Build tooling
 bindgen = "0.72"
