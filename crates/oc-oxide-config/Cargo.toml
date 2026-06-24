@@ -1,0 +1,19 @@
+[package]
+name = "oc-oxide-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Profile configuration and keyring integration"
+
+[lib]
+name = "oc_oxide_config"
+path = "src/lib.rs"
+
+[dependencies]
+keyring.workspace = true
+oc-oxide-dns.workspace = true
+oc-oxide-net.workspace = true
+serde.workspace = true
+toml.workspace = true
+url = { workspace = true }

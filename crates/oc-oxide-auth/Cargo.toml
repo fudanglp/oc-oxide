@@ -1,0 +1,14 @@
+[package]
+name = "oc-oxide-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Typed auth form events for OpenConnect sessions"
+
+[lib]
+name = "oc_oxide_auth"
+path = "src/lib.rs"
+
+[dependencies]
+oc-oxide-openconnect-sys = { workspace = true }

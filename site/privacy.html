@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Privacy notes for oc-oxide GitHub profile synchronization.">
+    <title>Privacy - oc-oxide</title>
+    <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="oc-oxide home">
+        <img src="assets/app-icon.svg" width="36" height="36" alt="">
+        <span>oc-oxide</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="https://github.com/fudanglp/oc-oxide">Source</a>
+        <a href="https://github.com/fudanglp/oc-oxide/tree/main/docs">Docs</a>
+        <a aria-current="page" href="privacy.html">Privacy</a>
+      </nav>
+    </header>
+
+    <main class="document">
+      <p class="eyebrow">Privacy</p>
+      <h1>oc-oxide privacy notes</h1>
+      <p class="lede">
+        oc-oxide is designed so GitHub profile synchronization does not require
+        GitHub to receive VPN credentials or readable VPN profile contents.
+      </p>
+
+      <section aria-labelledby="sync-data">
+        <h2 id="sync-data">GitHub sync data</h2>
+        <p>
+          The planned GitHub integration stores encrypted profile files in a
+          user-selected private repository. Profile content is encrypted locally
+          before upload. GitHub receives ciphertext and normal repository
+          metadata such as commit history, timestamps, file names, and account
+          activity.
+        </p>
+      </section>
+
+      <section aria-labelledby="not-stored">
+        <h2 id="not-stored">Data not stored in GitHub</h2>
+        <p>
+          oc-oxide does not store VPN passwords, OTP values, session cookies,
+          private keys, client certificate passphrases, router credentials, or
+          daemon tokens in GitHub profile synchronization.
+        </p>
+      </section>
+
+      <section aria-labelledby="tokens">
+        <h2 id="tokens">GitHub tokens</h2>
+        <p>
+          GitHub access and refresh tokens should be stored in the operating
+          system keyring, not in profile files. If authorization expires or is
+          revoked, oc-oxide will require a fresh GitHub sign-in before syncing.
+        </p>
+      </section>
+
+      <section aria-labelledby="local-data">
+        <h2 id="local-data">Local data</h2>
+        <p>
+          Local profile configuration lives on the user's device. Device-specific
+          route, DNS, daemon, and network backend settings should stay local
+          because they can differ between Linux, macOS, Windows, and individual
+          networks.
+        </p>
+      </section>
+
+      <section aria-labelledby="diagnostics">
+        <h2 id="diagnostics">Diagnostics</h2>
+        <p>
+          oc-oxide should not upload diagnostics or logs automatically. Any
+          diagnostic bundle sharing should be an explicit user action and should
+          redact secrets before export.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>oc-oxide</span>
+      <span>MIT licensed</span>
+      <a href="index.html">Home</a>
+    </footer>
+  </body>
+</html>

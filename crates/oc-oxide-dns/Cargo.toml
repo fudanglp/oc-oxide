@@ -1,0 +1,12 @@
+[package]
+name = "oc-oxide-dns"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "DNS apply and revert policy for VPN sessions"
+
+[lib]
+name = "oc_oxide_dns"
+path = "src/lib.rs"
+

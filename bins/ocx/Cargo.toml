@@ -1,0 +1,23 @@
+[package]
+name = "ocx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Developer CLI for the oc-oxide daemon"
+
+[[bin]]
+name = "ocx"
+path = "src/main.rs"
+
+[dependencies]
+oc-oxide-auth.workspace = true
+oc-oxide-config.workspace = true
+oc-oxide-daemon.workspace = true
+oc-oxide-dns.workspace = true
+oc-oxide-ipc.workspace = true
+oc-oxide-net.workspace = true
+oc-oxide-policy.workspace = true
+oc-oxide-sync.workspace = true
+oc-oxide-tunnel.workspace = true
+reqwest.workspace = true

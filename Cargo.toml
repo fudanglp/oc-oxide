@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/oc-oxide-openconnect-sys",
+    "crates/oc-oxide-tunnel",
+    "crates/oc-oxide-auth",
+    "crates/oc-oxide-net",
+    "crates/oc-oxide-dns",
+    "crates/oc-oxide-policy",
+    "crates/oc-oxide-config",
+    "crates/oc-oxide-sync",
+    "crates/oc-oxide-ipc",
+    "bins/oc-oxide-daemon",
+    "bins/ocx",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/fudanglp/oc-oxide"
+authors = ["oc-oxide contributors"]
+
+[workspace.dependencies]
+oc-oxide-openconnect-sys = { path = "crates/oc-oxide-openconnect-sys", version = "0.1.0" }
+oc-oxide-tunnel = { path = "crates/oc-oxide-tunnel", version = "0.1.0" }
+oc-oxide-auth = { path = "crates/oc-oxide-auth", version = "0.1.0" }
+oc-oxide-net = { path = "crates/oc-oxide-net", version = "0.1.0" }
+oc-oxide-dns = { path = "crates/oc-oxide-dns", version = "0.1.0" }
+oc-oxide-policy = { path = "crates/oc-oxide-policy", version = "0.1.0" }
+oc-oxide-config = { path = "crates/oc-oxide-config", version = "0.1.0" }
+oc-oxide-sync = { path = "crates/oc-oxide-sync", version = "0.1.0" }
+oc-oxide-ipc = { path = "crates/oc-oxide-ipc", version = "0.1.0" }
+oc-oxide-daemon = { path = "bins/oc-oxide-daemon", version = "0.1.0" }
+
+# Build tooling
+bindgen = "0.72"
+cc = "1"
+
+# Runtime libraries
+base64 = "0.22"
+futures = "0.3"
+keyring = "4.1"
+libc = "0.2"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "form", "rustls"] }
+rtnetlink = "0.21"
+tokio = { version = "1", features = ["net", "rt"] }
+toml = "0.8"
+url = "2.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

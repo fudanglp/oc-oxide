@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="oc-oxide is a Rust/Tauri OpenConnect helper with a daemon-owned VPN control plane and optional non-secret profile sync.">
+    <title>oc-oxide</title>
+    <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="oc-oxide home">
+        <img src="assets/app-icon.svg" width="36" height="36" alt="">
+        <span>oc-oxide</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="https://github.com/fudanglp/oc-oxide">Source</a>
+        <a href="https://github.com/fudanglp/oc-oxide/tree/main/docs">Docs</a>
+        <a href="privacy.html">Privacy</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <img class="hero-mark" src="assets/app-icon.svg" alt="">
+        <div class="hero-copy">
+          <p class="eyebrow">Rust/Tauri OpenConnect helper</p>
+          <h1 id="hero-title">oc-oxide</h1>
+          <p class="lede">
+            A desktop VPN helper that keeps OpenConnect protocol handling in
+            libopenconnect and moves profile, route, DNS, diagnostics, and UI
+            control into a Rust daemon architecture.
+          </p>
+          <div class="actions" aria-label="Project links">
+            <a class="button primary" href="https://github.com/fudanglp/oc-oxide">View source</a>
+            <a class="button secondary" href="install.sh">Install script</a>
+            <a class="button secondary" href="privacy.html">Privacy details</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section security" aria-labelledby="github-title">
+        <div class="section-heading">
+          <p class="eyebrow">GitHub integration</p>
+          <h2 id="github-title">Used only for profile synchronization</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>Non-secret profile snapshots</h3>
+            <p>
+              GitHub sync stores profile snapshots that exclude VPN passwords,
+              OTP codes, cookies, private keys, and daemon tokens.
+            </p>
+          </article>
+          <article class="feature-card">
+            <h3>No VPN secrets in sync</h3>
+            <p>
+              Passwords, OTP codes, session cookies, private keys, router
+              credentials, and daemon tokens are not stored in GitHub.
+            </p>
+          </article>
+          <article class="feature-card">
+            <h3>Narrow repository access</h3>
+            <p>
+              The planned GitHub App is scoped to repository contents for a
+              user-selected private sync repository.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section split" aria-labelledby="architecture-title">
+        <div>
+          <p class="eyebrow">Architecture</p>
+          <h2 id="architecture-title">Daemon-owned VPN control plane</h2>
+        </div>
+        <p>
+          The Tauri desktop app is an unprivileged client. A daemon owns
+          libopenconnect, TUN setup, route policy, DNS policy, cancellation,
+          recovery, and IPC state. The project is Linux-first today, with crate
+          boundaries designed so route, DNS, and privilege backends can grow per
+          platform.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>oc-oxide</span>
+      <span>MIT licensed</span>
+      <a href="privacy.html">Privacy</a>
+    </footer>
+  </body>
+</html>

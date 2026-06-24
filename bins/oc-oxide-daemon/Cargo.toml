@@ -1,0 +1,27 @@
+[package]
+name = "oc-oxide-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Privileged oc-oxide tunnel daemon"
+
+[[bin]]
+name = "oc-oxide-daemon"
+path = "src/main.rs"
+
+[lib]
+name = "oc_oxide_daemon"
+path = "src/lib.rs"
+
+[dependencies]
+oc-oxide-auth.workspace = true
+oc-oxide-config.workspace = true
+oc-oxide-dns.workspace = true
+oc-oxide-ipc.workspace = true
+oc-oxide-net.workspace = true
+oc-oxide-policy.workspace = true
+oc-oxide-tunnel.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "oc-oxide-openconnect-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Raw FFI bindings to libopenconnect"
+links = "openconnect"
+
+[lib]
+name = "oc_oxide_openconnect_sys"
+path = "src/lib.rs"
+
+[build-dependencies]
+bindgen = { workspace = true }
+cc.workspace = true

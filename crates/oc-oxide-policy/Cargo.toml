@@ -1,0 +1,15 @@
+[package]
+name = "oc-oxide-policy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Unified VPN TUN, route, and DNS policy apply orchestration"
+
+[lib]
+name = "oc_oxide_policy"
+path = "src/lib.rs"
+
+[dependencies]
+oc-oxide-dns.workspace = true
+oc-oxide-net.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "oc-oxide-tunnel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Safe tunnel lifecycle wrapper around libopenconnect"
+
+[lib]
+name = "oc_oxide_tunnel"
+path = "src/lib.rs"
+
+[dependencies]
+oc-oxide-auth = { workspace = true }
+oc-oxide-config = { workspace = true }
+oc-oxide-openconnect-sys = { workspace = true }

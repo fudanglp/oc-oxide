@@ -1,0 +1,17 @@
+[package]
+name = "oc-oxide-sync"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GitHub private repo profile synchronization model and backend boundary"
+
+[lib]
+name = "oc_oxide_sync"
+path = "src/lib.rs"
+
+[dependencies]
+base64.workspace = true
+keyring.workspace = true
+serde.workspace = true
+serde_json.workspace = true

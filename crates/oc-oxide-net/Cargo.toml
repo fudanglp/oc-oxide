@@ -1,0 +1,16 @@
+[package]
+name = "oc-oxide-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Route and network policy engine for VPN sessions"
+
+[lib]
+name = "oc_oxide_net"
+path = "src/lib.rs"
+
+[dependencies]
+futures.workspace = true
+rtnetlink.workspace = true
+tokio.workspace = true
