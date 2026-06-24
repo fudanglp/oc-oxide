@@ -204,6 +204,37 @@ h3 {
   margin-bottom: 28px;
 }
 
+.install {
+  padding-top: 54px;
+}
+
+.install-command {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  width: min(100%, 720px);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101820;
+  box-shadow: 0 16px 40px rgba(23, 32, 42, 0.1);
+}
+
+.install-command code {
+  display: block;
+  padding: 16px 18px;
+  color: #f6f8fb;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.install-note {
+  width: min(100%, 720px);
+  margin: 14px 0 0;
+  color: var(--muted);
+}
+
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

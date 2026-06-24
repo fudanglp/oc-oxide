@@ -166,6 +166,16 @@ download_checked() {
   (cd "$TMPDIR" && sha256sum -c "$name.sha256")
 }
 
+make_apt_readable() {
+  artifact=$1
+  # apt reads local .deb files through the _apt sandbox user when possible.
+  # mktemp creates a private 0700 directory, so make only this transient
+  # download directory and verified artifacts readable to avoid a noisy apt
+  # fallback-to-root notice.
+  chmod 0755 "$TMPDIR"
+  chmod 0644 "$artifact" "$artifact.sha256"
+}
+
 run_or_print() {
   if [ "$DRY_RUN" = "1" ]; then
     printf '+'
@@ -185,6 +195,8 @@ case "$METHOD" in
     download_checked "$name"
     if [ "$DRY_RUN" = "1" ]; then
       printf 'Would install Debian package: %s\n' "$TMPDIR/$name"
+    else
+      make_apt_readable "$TMPDIR/$name"
     fi
     run_or_print $SUDO apt install "$TMPDIR/$name"
     ;;
