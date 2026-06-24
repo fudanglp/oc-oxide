@@ -1,5 +1,10 @@
 # Architecture
 
+![oc-oxide architecture](assets/architecture.png)
+
+The editable HTML source for this diagram is
+[oc-oxide-architecture-diagram.html](oc-oxide-architecture-diagram.html).
+
 oc-oxide is split into small crates with strict responsibilities. The key rule
 is that only the tunnel crates know about `libopenconnect`; route, DNS, config,
 IPC, sync, and UI logic operate on Rust-owned session/config snapshots.

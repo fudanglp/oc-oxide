@@ -197,17 +197,7 @@ polkit, keyring, sync, and redaction model.
 
 ## Architecture
 
-At a high level:
-
-```text
-desktop app / ocx CLI
-        |
-        v
-privileged oc-oxide-daemon
-        |
-        v
-libopenconnect + TUN + route/DNS policy
-```
+![oc-oxide architecture](docs/assets/architecture.png)
 
 Only the tunnel crates call `libopenconnect`; route, DNS, config, IPC, sync,
 and UI code operate on Rust-owned snapshots and typed events.
