@@ -187,6 +187,30 @@ type GithubSyncOperation =
   | "downloading"
   | "deleting";
 
+type UpdateStatus = {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string | null;
+  assetName: string | null;
+  assetUrl: string | null;
+  sha256Url: string | null;
+  artifactPath: string | null;
+  sha256Path: string | null;
+  manifestPath: string | null;
+  checkedAt: string;
+  message: string | null;
+};
+
+type UpdateState = {
+  status: "unknown" | "checking" | "ready" | "error" | "installed";
+  detail: UpdateStatus | null;
+  message: string | null;
+  lastCheckedAt: number | null;
+};
+
+type UpdateOperation = "idle" | "checking" | "downloading" | "installing";
+
 type CredentialState =
   | { status: "unknown" | "checking"; message: null }
   | { status: "saved" | "not_saved"; message: null }
@@ -311,6 +335,13 @@ const initialGithubSyncHistoryState: GithubSyncHistoryState = {
   message: null,
 };
 
+const initialUpdateState: UpdateState = {
+  status: "unknown",
+  detail: null,
+  message: null,
+  lastCheckedAt: null,
+};
+
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "busy":
@@ -432,6 +463,10 @@ export default function App() {
   const [githubSyncAutoRefreshStarted, setGithubSyncAutoRefreshStarted] = useState(false);
   const [githubSyncOperation, setGithubSyncOperation] =
     useState<GithubSyncOperation>("idle");
+  const [updateState, setUpdateState] = useState<UpdateState>(initialUpdateState);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateOperation, setUpdateOperation] = useState<UpdateOperation>("idle");
+  const [updateAutoRefreshStarted, setUpdateAutoRefreshStarted] = useState(false);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -450,8 +485,13 @@ export default function App() {
     });
 
     void refreshAll();
+    const updateTimer = window.setTimeout(() => {
+      setUpdateAutoRefreshStarted(true);
+      void refreshUpdateStatus(true);
+    }, 5000);
 
     return () => {
+      window.clearTimeout(updateTimer);
       void unlistenResponse.then((fn) => fn());
       void unlistenEvent.then((fn) => fn());
     };
@@ -479,14 +519,27 @@ export default function App() {
   useEffect(() => {
     if (
       activeView === "settings" &&
-      !githubSyncAutoRefreshStarted &&
+      (!githubSyncAutoRefreshStarted || !updateAutoRefreshStarted) &&
       !githubSyncBusy &&
+      !updateBusy &&
       isTauriRuntime()
     ) {
-      setGithubSyncAutoRefreshStarted(true);
-      void refreshGithubSyncStatus();
+      if (!githubSyncAutoRefreshStarted) {
+        setGithubSyncAutoRefreshStarted(true);
+        void refreshGithubSyncStatus();
+      }
+      if (!updateAutoRefreshStarted) {
+        setUpdateAutoRefreshStarted(true);
+        void refreshUpdateStatus(true);
+      }
     }
-  }, [activeView, githubSyncAutoRefreshStarted, githubSyncBusy]);
+  }, [
+    activeView,
+    githubSyncAutoRefreshStarted,
+    githubSyncBusy,
+    updateAutoRefreshStarted,
+    updateBusy,
+  ]);
 
   useEffect(() => {
     if (activeView !== "settings" || !githubSyncLoginOpen || !githubSyncFlow) {
@@ -626,7 +679,7 @@ export default function App() {
 
   async function refreshActiveView() {
     if (activeView === "settings") {
-      await refreshGithubSyncStatus();
+      await Promise.all([refreshGithubSyncStatus(), refreshUpdateStatus(false)]);
       return;
     }
 
@@ -1089,6 +1142,132 @@ export default function App() {
     }
   }
 
+  async function refreshUpdateStatus(automatic: boolean) {
+    if (updateBusy) {
+      return;
+    }
+    setUpdateBusy(true);
+    setUpdateOperation("checking");
+    setUpdateState((current) => ({ ...current, status: "checking", message: null }));
+    try {
+      const detail = await invoke<UpdateStatus>("update_check");
+      setUpdateState({
+        status: "ready",
+        detail,
+        message: detail.message,
+        lastCheckedAt: Date.now(),
+      });
+    } catch (error) {
+      const message = formatError(error);
+      setUpdateState((current) => ({
+        ...current,
+        status: "error",
+        message,
+        lastCheckedAt: Date.now(),
+      }));
+      if (!automatic) {
+        dispatch({ type: "log", level: "warn", message });
+      }
+    } finally {
+      setUpdateBusy(false);
+      setUpdateOperation("idle");
+    }
+  }
+
+  async function prepareUpdate() {
+    setUpdateBusy(true);
+    setUpdateOperation("downloading");
+    setUpdateState((current) => ({ ...current, status: "checking", message: null }));
+    try {
+      const detail = await invoke<UpdateStatus>("update_prepare");
+      setUpdateState({
+        status: "ready",
+        detail,
+        message: detail.message,
+        lastCheckedAt: Date.now(),
+      });
+      dispatch({
+        type: "log",
+        level: "info",
+        message: detail.message ?? "update artifact verified",
+      });
+    } catch (error) {
+      const message = formatError(error);
+      setUpdateState((current) => ({
+        ...current,
+        status: "error",
+        message,
+        lastCheckedAt: Date.now(),
+      }));
+      dispatch({ type: "log", level: "warn", message });
+    } finally {
+      setUpdateBusy(false);
+      setUpdateOperation("idle");
+    }
+  }
+
+  async function installPreparedUpdate() {
+    let manifestPath = updateState.detail?.manifestPath;
+    if (!manifestPath) {
+      setUpdateBusy(true);
+      setUpdateOperation("downloading");
+      try {
+        const detail = await invoke<UpdateStatus>("update_prepare");
+        manifestPath = detail.manifestPath;
+        setUpdateState({
+          status: "ready",
+          detail,
+          message: detail.message,
+          lastCheckedAt: Date.now(),
+        });
+      } catch (error) {
+        const message = formatError(error);
+        setUpdateState((current) => ({
+          ...current,
+          status: "error",
+          message,
+          lastCheckedAt: Date.now(),
+        }));
+        dispatch({ type: "log", level: "warn", message });
+        setUpdateBusy(false);
+        setUpdateOperation("idle");
+        return;
+      } finally {
+        setUpdateBusy(false);
+      }
+    }
+
+    if (!manifestPath) {
+      setUpdateState((current) => ({
+        ...current,
+        status: "error",
+        message: "update manifest was not prepared",
+      }));
+      setUpdateOperation("idle");
+      return;
+    }
+
+    setUpdateBusy(true);
+    setUpdateOperation("installing");
+    try {
+      const message = await invoke<string>("update_install", { manifestPath });
+      setUpdateState((current) => ({
+        ...current,
+        status: "installed",
+        message: message || "Update installed. Relaunching...",
+      }));
+      dispatch({ type: "log", level: "info", message: message || "update installed" });
+      await invoke("update_relaunch");
+    } catch (error) {
+      const message = formatError(error);
+      setUpdateState((current) => ({ ...current, status: "error", message }));
+      dispatch({ type: "log", level: "warn", message });
+    } finally {
+      setUpdateBusy(false);
+      setUpdateOperation("idle");
+    }
+  }
+
   async function submitAuth(fields: AuthSubmittedField[], saveRequest: AuthSaveRequest | null) {
     if (!state.authPrompt) {
       return;
@@ -1144,7 +1323,7 @@ export default function App() {
             activeView={activeView}
             daemon={state.daemon}
             busy={state.busy}
-            refreshBusy={activeView === "settings" ? githubSyncBusy : state.busy}
+            refreshBusy={activeView === "settings" ? githubSyncBusy || updateBusy : state.busy}
             canDisconnect={canDisconnect}
             onRefresh={refreshActiveView}
             onDisconnect={disconnect}
@@ -1172,6 +1351,9 @@ export default function App() {
               githubSyncHistoryState={githubSyncHistoryState}
               githubSyncBusy={githubSyncBusy}
               githubSyncOperation={githubSyncOperation}
+              updateState={updateState}
+              updateBusy={updateBusy}
+              updateOperation={updateOperation}
               setCreateProfileDraft={setCreateProfileDraft}
               setCreateProfileFieldErrors={setCreateProfileFieldErrors}
               onCloseCreateProfile={closeCreateProfileTab}
@@ -1180,6 +1362,9 @@ export default function App() {
               onInitGithubSyncManifest={initGithubSyncManifest}
               onUploadGithubSyncProfiles={openGithubSyncUploadDialog}
               onDownloadGithubSyncProfiles={openGithubSyncDownloadDialog}
+              onRefreshUpdateStatus={() => refreshUpdateStatus(false)}
+              onPrepareUpdate={prepareUpdate}
+              onInstallPreparedUpdate={installPreparedUpdate}
               onDuplicateProfile={duplicateProfile}
               onRenameProfile={renameProfile}
               onDeleteProfile={deleteProfile}
@@ -1641,6 +1826,9 @@ function WorkbenchView({
   githubSyncHistoryState,
   githubSyncBusy,
   githubSyncOperation,
+  updateState,
+  updateBusy,
+  updateOperation,
   setCreateProfileDraft,
   setCreateProfileFieldErrors,
   onCloseCreateProfile,
@@ -1649,6 +1837,9 @@ function WorkbenchView({
   onInitGithubSyncManifest,
   onUploadGithubSyncProfiles,
   onDownloadGithubSyncProfiles,
+  onRefreshUpdateStatus,
+  onPrepareUpdate,
+  onInstallPreparedUpdate,
   onDuplicateProfile,
   onRenameProfile,
   onDeleteProfile,
@@ -1678,6 +1869,9 @@ function WorkbenchView({
   githubSyncHistoryState: GithubSyncHistoryState;
   githubSyncBusy: boolean;
   githubSyncOperation: GithubSyncOperation;
+  updateState: UpdateState;
+  updateBusy: boolean;
+  updateOperation: UpdateOperation;
   setCreateProfileDraft: React.Dispatch<React.SetStateAction<CreateProfileDraft>>;
   setCreateProfileFieldErrors: React.Dispatch<React.SetStateAction<CreateProfileFieldErrors>>;
   onCloseCreateProfile: () => void;
@@ -1686,6 +1880,9 @@ function WorkbenchView({
   onInitGithubSyncManifest: () => Promise<void>;
   onUploadGithubSyncProfiles: () => void;
   onDownloadGithubSyncProfiles: () => void;
+  onRefreshUpdateStatus: () => Promise<void>;
+  onPrepareUpdate: () => Promise<void>;
+  onInstallPreparedUpdate: () => Promise<void>;
   onDuplicateProfile: () => Promise<void>;
   onRenameProfile: (newName: string) => Promise<void>;
   onDeleteProfile: (syncTombstone?: boolean) => Promise<void>;
@@ -1711,10 +1908,16 @@ function WorkbenchView({
         githubSyncHistoryState={githubSyncHistoryState}
         githubSyncBusy={githubSyncBusy}
         githubSyncOperation={githubSyncOperation}
+        updateState={updateState}
+        updateBusy={updateBusy}
+        updateOperation={updateOperation}
         onStartGithubSyncLogin={onStartGithubSyncLogin}
         onInitGithubSyncManifest={onInitGithubSyncManifest}
         onUploadGithubSyncProfiles={onUploadGithubSyncProfiles}
         onDownloadGithubSyncProfiles={onDownloadGithubSyncProfiles}
+        onRefreshUpdateStatus={onRefreshUpdateStatus}
+        onPrepareUpdate={onPrepareUpdate}
+        onInstallPreparedUpdate={onInstallPreparedUpdate}
       />
     );
   }
@@ -2610,10 +2813,16 @@ function SettingsView({
   githubSyncHistoryState,
   githubSyncBusy,
   githubSyncOperation,
+  updateState,
+  updateBusy,
+  updateOperation,
   onStartGithubSyncLogin,
   onInitGithubSyncManifest,
   onUploadGithubSyncProfiles,
   onDownloadGithubSyncProfiles,
+  onRefreshUpdateStatus,
+  onPrepareUpdate,
+  onInstallPreparedUpdate,
 }: {
   profile: string;
   profileDir: string | null;
@@ -2621,13 +2830,28 @@ function SettingsView({
   githubSyncHistoryState: GithubSyncHistoryState;
   githubSyncBusy: boolean;
   githubSyncOperation: GithubSyncOperation;
+  updateState: UpdateState;
+  updateBusy: boolean;
+  updateOperation: UpdateOperation;
   onStartGithubSyncLogin: () => Promise<void>;
   onInitGithubSyncManifest: () => Promise<void>;
   onUploadGithubSyncProfiles: () => void;
   onDownloadGithubSyncProfiles: () => void;
+  onRefreshUpdateStatus: () => Promise<void>;
+  onPrepareUpdate: () => Promise<void>;
+  onInstallPreparedUpdate: () => Promise<void>;
 }) {
   return (
     <div className="workbench-surface grid gap-4">
+      <UpdateSettings
+        state={updateState}
+        busy={updateBusy}
+        operation={updateOperation}
+        onRefresh={onRefreshUpdateStatus}
+        onPrepare={onPrepareUpdate}
+        onInstall={onInstallPreparedUpdate}
+      />
+
       <GithubSyncSettings
         state={githubSyncState}
         busy={githubSyncBusy}
@@ -2672,6 +2896,160 @@ function SettingsView({
         </div>
       </section>
     </div>
+  );
+}
+
+function UpdateSettings({
+  state,
+  busy,
+  operation,
+  onRefresh,
+  onPrepare,
+  onInstall,
+}: {
+  state: UpdateState;
+  busy: boolean;
+  operation: UpdateOperation;
+  onRefresh: () => Promise<void>;
+  onPrepare: () => Promise<void>;
+  onInstall: () => Promise<void>;
+}) {
+  const detail = state.detail;
+  const prepared = Boolean(detail?.manifestPath);
+  const canPrepare = Boolean(detail?.updateAvailable) && !busy && !prepared;
+  const canInstall = Boolean(detail?.updateAvailable) && !busy;
+
+  return (
+    <section className="rounded-md bg-card p-4">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Download className="h-4 w-4" />
+            Updates
+          </h2>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <span>Current {detail?.currentVersion ?? "unknown"}</span>
+            <span className="h-1 w-1 rounded-full bg-[#bdc3c7]" />
+            <span>{formatLastChecked(state.lastCheckedAt)}</span>
+            {detail?.assetName ? (
+              <>
+                <span className="h-1 w-1 rounded-full bg-[#bdc3c7]" />
+                <span>{detail.assetName}</span>
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <UpdateBadge state={state} />
+        </div>
+      </div>
+
+      {state.status === "error" ? (
+        <div className="mb-3 rounded-md bg-destructive p-3 text-sm font-semibold text-white">
+          {state.message}
+        </div>
+      ) : null}
+
+      <div className="responsive-main-panel grid gap-4">
+        <div className="rounded-md bg-muted p-3">
+          <dl className="responsive-description-list grid gap-x-3 gap-y-3 text-sm">
+            <dt className="text-muted-foreground">Latest</dt>
+            <dd className="font-medium">{detail?.latestVersion ?? "-"}</dd>
+            <dt className="text-muted-foreground">Status</dt>
+            <dd className="font-medium">{updateStatusText(state, operation)}</dd>
+            <dt className="text-muted-foreground">Downloaded</dt>
+            <dd className="break-words font-medium">{detail?.artifactPath ?? "-"}</dd>
+            <dt className="text-muted-foreground">Manifest</dt>
+            <dd className="break-words font-medium">{detail?.manifestPath ?? "-"}</dd>
+          </dl>
+          {detail?.message || state.message ? (
+            <div className="mt-3 rounded-md bg-white p-2 text-sm font-medium text-muted-foreground">
+              {state.message ?? detail?.message}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-md bg-muted p-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3 text-sm">
+                {detail?.updateAvailable ? (
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-[#f39c12]" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+                )}
+                <div className="min-w-0">
+                  <div className="font-semibold text-foreground">
+                    {detail?.updateAvailable ? "Update available" : "No update ready"}
+                  </div>
+                  <div className="truncate text-muted-foreground">
+                    {detail?.updateAvailable
+                      ? `oc-oxide ${detail.latestVersion} can be installed`
+                      : "Checks run in the background after startup"}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {detail?.releaseUrl ? (
+                  <Button type="button" variant="outline" onClick={() => openExternal(detail.releaseUrl!)}>
+                    <ExternalLink className="h-4 w-4" />
+                    Release
+                  </Button>
+                ) : null}
+                <Button type="button" variant="outline" onClick={() => void onRefresh()} disabled={busy}>
+                  {operation === "checking" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Check
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {detail?.updateAvailable ? (
+            <div className="rounded-md bg-muted p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3 text-sm">
+                  <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <div className="font-semibold text-foreground">
+                      {prepared ? "Artifact verified" : "Prepare installer"}
+                    </div>
+                    <div className="truncate text-muted-foreground">
+                      {prepared
+                        ? "The downloaded artifact passed checksum validation."
+                        : "Download the release artifact and verify its checksum before authorization."}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  {!prepared ? (
+                    <Button type="button" variant="outline" disabled={!canPrepare} onClick={() => void onPrepare()}>
+                      {operation === "downloading" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Download
+                    </Button>
+                  ) : null}
+                  <Button type="button" disabled={!canInstall} onClick={() => void onInstall()}>
+                    {operation === "installing" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    Install & Relaunch
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -3201,6 +3579,62 @@ function GithubSyncBadge({ state }: { state: GithubSyncState }) {
   return <Badge variant="outline">unknown</Badge>;
 }
 
+function UpdateBadge({ state }: { state: UpdateState }) {
+  if (state.status === "checking") {
+    return <Badge variant="warning">checking</Badge>;
+  }
+
+  if (state.status === "error") {
+    return <Badge variant="destructive">error</Badge>;
+  }
+
+  if (state.status === "installed") {
+    return <Badge variant="default">installed</Badge>;
+  }
+
+  if (state.detail?.updateAvailable) {
+    return <Badge variant="warning">available</Badge>;
+  }
+
+  if (state.status === "ready") {
+    return <Badge variant="outline">up to date</Badge>;
+  }
+
+  return <Badge variant="outline">unknown</Badge>;
+}
+
+function updateStatusText(state: UpdateState, operation: UpdateOperation) {
+  if (operation === "checking") {
+    return "Checking for updates...";
+  }
+
+  if (operation === "downloading") {
+    return "Downloading and verifying...";
+  }
+
+  if (operation === "installing") {
+    return "Installing with system authorization...";
+  }
+
+  if (state.status === "installed") {
+    return "Installed; relaunching";
+  }
+
+  if (state.status === "error") {
+    return "Update check failed";
+  }
+
+  if (state.detail?.updateAvailable) {
+    return state.detail.manifestPath ? "Ready to install" : "Update available";
+  }
+
+  if (state.status === "ready") {
+    return "Up to date";
+  }
+
+  return "Not checked";
+}
+
 function githubSyncAuthText(auth: GithubSyncAuthState | undefined, status: GithubSyncState["status"]) {
   if (status === "checking") {
     return auth ? `${githubSyncAuthLabel(auth)} (refreshing...)` : "Checking keyring...";
@@ -3674,6 +4108,10 @@ async function copyText(value: string) {
   } catch {
     // Clipboard access can be denied by the host environment.
   }
+}
+
+function openExternal(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function formatLogTimestamp(id: number) {

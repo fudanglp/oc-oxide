@@ -20,6 +20,7 @@ rm -f "$PREFIX/bin/oc-oxide" \
 rm -f "$PREFIX/libexec/oc-oxide/oc-oxide-desktop" \
   "$PREFIX/libexec/oc-oxide/oc-oxide-daemon" \
   "$PREFIX/libexec/oc-oxide/ocx" \
+  "$PREFIX/libexec/oc-oxide/oc-oxide-update" \
   "$PREFIX/libexec/oc-oxide/uninstall.sh"
 
 rm -f "$PREFIX/lib/libopenconnect.so" \

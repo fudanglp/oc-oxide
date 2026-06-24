@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::FileTypeExt;
 #[cfg(unix)]
@@ -30,6 +30,7 @@ use oc_oxide_sync::{
     SyncProfileConnection, SyncProfileDocument, SyncWrite, DEFAULT_GITHUB_TOKEN_ACCOUNT,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, MenuItemBuilder, PredefinedMenuItem},
@@ -55,6 +56,11 @@ const GITHUB_DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_
 const GITHUB_REFRESH_TOKEN_GRANT_TYPE: &str = "refresh_token";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const USER_AGENT: &str = "oc-oxide-desktop/0.1";
+const UPDATE_REPO_ENV: &str = "OC_OXIDE_UPDATE_REPO";
+const UPDATE_WRAPPER_ENV: &str = "OC_OXIDE_UPDATE_WRAPPER";
+const DEFAULT_UPDATE_REPO: &str = "fudanglp/oc-oxide";
+const LOCAL_UPDATE_WRAPPER: &str = "/usr/local/libexec/oc-oxide/oc-oxide-update";
+const SYSTEM_UPDATE_WRAPPER: &str = "/usr/libexec/oc-oxide/oc-oxide-update";
 
 #[derive(Default)]
 struct DesktopState {
@@ -210,6 +216,56 @@ struct GithubDeviceFlowPollResult {
     next_interval_secs: u64,
     expires_in_secs: Option<u64>,
     refresh_token_expires_in_secs: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateStatus {
+    current_version: String,
+    latest_version: Option<String>,
+    update_available: bool,
+    release_url: Option<String>,
+    asset_name: Option<String>,
+    asset_url: Option<String>,
+    sha256_url: Option<String>,
+    artifact_path: Option<String>,
+    sha256_path: Option<String>,
+    manifest_path: Option<String>,
+    checked_at: String,
+    message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInstallManifest {
+    version: String,
+    method: UpdateInstallMethod,
+    artifact: String,
+    sha256: String,
+    expected_sha256: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum UpdateInstallMethod {
+    Deb,
+    Tarball,
+}
+
+#[derive(Debug, Clone)]
+struct GithubRelease {
+    repo: String,
+    tag_name: String,
+    html_url: String,
+}
+
+#[derive(Debug, Clone)]
+struct UpdateCandidate {
+    status: UpdateStatus,
+    version: String,
+    method: UpdateInstallMethod,
+    asset_url: String,
+    sha256_url: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -454,6 +510,451 @@ async fn daemon_handoff_start() -> Result<DaemonHandoffStatus, String> {
     tauri::async_runtime::spawn_blocking(daemon_handoff_start_blocking)
         .await
         .map_err(|err| format!("daemon handoff task failed: {err}"))?
+}
+
+#[tauri::command]
+async fn update_check() -> Result<UpdateStatus, String> {
+    tauri::async_runtime::spawn_blocking(update_check_blocking)
+        .await
+        .map_err(|err| format!("update check task failed: {err}"))?
+}
+
+#[tauri::command]
+async fn update_prepare() -> Result<UpdateStatus, String> {
+    tauri::async_runtime::spawn_blocking(update_prepare_blocking)
+        .await
+        .map_err(|err| format!("update download task failed: {err}"))?
+}
+
+#[tauri::command]
+async fn update_install(manifest_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || update_install_blocking(manifest_path))
+        .await
+        .map_err(|err| format!("update install task failed: {err}"))?
+}
+
+#[tauri::command]
+fn update_relaunch(app: AppHandle) -> Result<(), String> {
+    app.request_restart();
+    Ok(())
+}
+
+fn update_check_blocking() -> Result<UpdateStatus, String> {
+    Ok(resolve_update_candidate()?.status)
+}
+
+fn update_prepare_blocking() -> Result<UpdateStatus, String> {
+    let candidate = resolve_update_candidate()?;
+    if !candidate.status.update_available {
+        return Ok(candidate.status);
+    }
+
+    let asset_name = candidate
+        .status
+        .asset_name
+        .clone()
+        .ok_or_else(|| "update candidate has no release asset".to_owned())?;
+    let version_dir = update_cache_dir()?.join(&candidate.version);
+    fs::create_dir_all(&version_dir).map_err(|err| {
+        format!(
+            "failed to create update cache {}: {err}",
+            version_dir.display()
+        )
+    })?;
+
+    let artifact_path = version_dir.join(&asset_name);
+    let sha256_name = format!("{asset_name}.sha256");
+    let sha256_path = version_dir.join(&sha256_name);
+
+    download_update_file(&candidate.asset_url, &artifact_path)?;
+    download_update_file(&candidate.sha256_url, &sha256_path)?;
+
+    let expected_sha256 = read_expected_sha256(&sha256_path, &asset_name)?;
+    let actual_sha256 = sha256_file_hex(&artifact_path)?;
+    if !expected_sha256.eq_ignore_ascii_case(&actual_sha256) {
+        return Err(format!(
+            "downloaded update checksum mismatch for {asset_name}: expected {expected_sha256}, got {actual_sha256}"
+        ));
+    }
+
+    let manifest = UpdateInstallManifest {
+        version: candidate.version.clone(),
+        method: candidate.method,
+        artifact: artifact_path.display().to_string(),
+        sha256: sha256_path.display().to_string(),
+        expected_sha256,
+    };
+    let manifest_path = version_dir.join("install-manifest.json");
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|err| format!("failed to serialize update manifest: {err}"))?;
+    fs::write(&manifest_path, manifest_json).map_err(|err| {
+        format!(
+            "failed to write update manifest {}: {err}",
+            manifest_path.display()
+        )
+    })?;
+
+    let mut status = candidate.status;
+    status.artifact_path = Some(artifact_path.display().to_string());
+    status.sha256_path = Some(sha256_path.display().to_string());
+    status.manifest_path = Some(manifest_path.display().to_string());
+    status.message = Some(format!("Downloaded and verified {asset_name}"));
+    Ok(status)
+}
+
+fn update_install_blocking(manifest_path: String) -> Result<String, String> {
+    let manifest_path = PathBuf::from(manifest_path);
+    if !manifest_path.is_file() {
+        return Err(format!(
+            "update manifest is missing: {}",
+            manifest_path.display()
+        ));
+    }
+
+    let wrapper = update_wrapper_path()?;
+    let mut command = if current_user_is_root() {
+        let mut command = Command::new(&wrapper);
+        command.arg("install");
+        command
+    } else {
+        if !command_exists("pkexec") {
+            return Err("pkexec is required to install updates from the desktop app".to_owned());
+        }
+        let mut command = Command::new("pkexec");
+        command.arg(&wrapper).arg("install");
+        command
+    };
+    let output = command
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .output()
+        .map_err(|err| {
+            format!(
+                "failed to start update installer {}: {err}",
+                wrapper.display()
+            )
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "update installer failed: {}",
+            command_output_detail(&output.stderr, &output.stdout)
+        ));
+    }
+
+    Ok(command_output_detail(&output.stderr, &output.stdout))
+}
+
+fn resolve_update_candidate() -> Result<UpdateCandidate, String> {
+    let release = fetch_latest_release()?;
+    let current_version = env!("CARGO_PKG_VERSION").to_owned();
+    let latest_version = release.tag_name.trim_start_matches('v').to_owned();
+    let update_available = version_is_newer(&latest_version, &current_version);
+    let checked_at = sync_updated_at();
+    let method = preferred_update_method();
+    let (asset_name, asset_url, sha256_url) = if update_available {
+        let asset_name = update_asset_name(&latest_version, method)?;
+        let sha256_name = format!("{asset_name}.sha256");
+        (
+            Some(asset_name.clone()),
+            Some(github_release_asset_url(
+                &release.repo,
+                &release.tag_name,
+                &asset_name,
+            )),
+            Some(github_release_asset_url(
+                &release.repo,
+                &release.tag_name,
+                &sha256_name,
+            )),
+        )
+    } else {
+        (None, None, None)
+    };
+
+    let status = UpdateStatus {
+        current_version,
+        latest_version: Some(latest_version.clone()),
+        update_available,
+        release_url: Some(release.html_url),
+        asset_name,
+        asset_url: asset_url.clone(),
+        sha256_url: sha256_url.clone(),
+        artifact_path: None,
+        sha256_path: None,
+        manifest_path: None,
+        checked_at,
+        message: Some(if update_available {
+            format!("oc-oxide {} is available", release.tag_name)
+        } else {
+            "oc-oxide is up to date".to_owned()
+        }),
+    };
+
+    Ok(UpdateCandidate {
+        status,
+        version: release.tag_name,
+        method,
+        asset_url: asset_url.unwrap_or_default(),
+        sha256_url: sha256_url.unwrap_or_default(),
+    })
+}
+
+fn fetch_latest_release() -> Result<GithubRelease, String> {
+    let repo = env::var(UPDATE_REPO_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_UPDATE_REPO.to_owned());
+    let url = format!("https://github.com/{repo}/releases/latest");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .user_agent(USER_AGENT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|err| format!("failed to build update HTTP client: {err}"))?;
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|err| format!("failed to fetch latest release metadata: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("latest release request failed: {err}"))?;
+    if !response.status().is_redirection() {
+        return Err(format!(
+            "latest release endpoint did not redirect: HTTP {}",
+            response.status()
+        ));
+    }
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| "latest release redirect did not include a Location header".to_owned())?;
+    let tag_name = parse_release_tag(location).ok_or_else(|| {
+        format!("latest release redirect did not include a release tag: {location}")
+    })?;
+    let html_url = if location.starts_with("http://") || location.starts_with("https://") {
+        location.to_owned()
+    } else {
+        format!("https://github.com{location}")
+    };
+
+    Ok(GithubRelease {
+        repo,
+        tag_name,
+        html_url,
+    })
+}
+
+fn parse_release_tag(location: &str) -> Option<String> {
+    let marker = "/releases/tag/";
+    let (_, tag) = location.split_once(marker)?;
+    let tag = tag
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .trim_matches('/');
+    (!tag.is_empty()).then(|| tag.to_owned())
+}
+
+fn github_release_asset_url(repo: &str, tag: &str, asset_name: &str) -> String {
+    format!("https://github.com/{repo}/releases/download/{tag}/{asset_name}")
+}
+
+fn preferred_update_method() -> UpdateInstallMethod {
+    if command_exists("apt") && command_exists("dpkg") {
+        UpdateInstallMethod::Deb
+    } else {
+        UpdateInstallMethod::Tarball
+    }
+}
+
+fn update_asset_name(version: &str, method: UpdateInstallMethod) -> Result<String, String> {
+    let version = version.trim_start_matches('v');
+    match method {
+        UpdateInstallMethod::Deb => Ok(format!("oc-oxide_{version}_{}.deb", deb_arch()?)),
+        UpdateInstallMethod::Tarball => {
+            Ok(format!("oc-oxide-{version}-linux-{}.tar.gz", linux_arch()?))
+        }
+    }
+}
+
+fn download_update_file(url: &str, path: &Path) -> Result<(), String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .user_agent(USER_AGENT)
+        .build()
+        .map_err(|err| format!("failed to build update download client: {err}"))?;
+    let mut response = client
+        .get(url)
+        .send()
+        .map_err(|err| format!("failed to download {url}: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("download failed for {url}: {err}"))?;
+    let part_path = path.with_extension(format!(
+        "{}part",
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| format!("{extension}."))
+            .unwrap_or_default()
+    ));
+    let mut file = fs::File::create(&part_path)
+        .map_err(|err| format!("failed to create {}: {err}", part_path.display()))?;
+    response
+        .copy_to(&mut file)
+        .map_err(|err| format!("failed to write {}: {err}", part_path.display()))?;
+    file.flush()
+        .map_err(|err| format!("failed to flush {}: {err}", part_path.display()))?;
+    fs::rename(&part_path, path).map_err(|err| {
+        format!(
+            "failed to move downloaded update {} to {}: {err}",
+            part_path.display(),
+            path.display()
+        )
+    })
+}
+
+fn read_expected_sha256(path: &Path, asset_name: &str) -> Result<String, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read checksum file {}: {err}", path.display()))?;
+    let mut fields = content.split_whitespace();
+    let checksum = fields
+        .next()
+        .ok_or_else(|| format!("checksum file {} is empty", path.display()))?;
+    if checksum.len() != 64
+        || !checksum
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "checksum file {} does not contain a sha256 digest",
+            path.display()
+        ));
+    }
+    if let Some(name) = fields.next() {
+        let clean_name = name.trim_start_matches('*');
+        if clean_name != asset_name {
+            return Err(format!(
+                "checksum file {} describes {clean_name}, expected {asset_name}",
+                path.display()
+            ));
+        }
+    }
+    Ok(checksum.to_ascii_lowercase())
+}
+
+fn sha256_file_hex(path: &Path) -> Result<String, String> {
+    let mut file =
+        fs::File::open(path).map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hex_lower(&hasher.finalize()))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn update_cache_dir() -> Result<PathBuf, String> {
+    let base = env::var_os("XDG_CACHE_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+        .ok_or_else(|| "HOME or XDG_CACHE_HOME is required to store update downloads".to_owned())?;
+    Ok(base.join("oc-oxide").join("updates"))
+}
+
+fn update_wrapper_path() -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os(UPDATE_WRAPPER_ENV)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+    {
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(format!(
+            "configured update wrapper is missing: {}",
+            path.display()
+        ));
+    }
+
+    [SYSTEM_UPDATE_WRAPPER, LOCAL_UPDATE_WRAPPER]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+        .ok_or_else(|| {
+            format!(
+                "update wrapper is not installed; expected {SYSTEM_UPDATE_WRAPPER} or {LOCAL_UPDATE_WRAPPER}"
+            )
+        })
+}
+
+fn current_user_is_root() -> bool {
+    Command::new("id")
+        .arg("-u")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
+        .unwrap_or(false)
+}
+
+fn command_exists(name: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {name} >/dev/null 2>&1"))
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn linux_arch() -> Result<&'static str, String> {
+    match std::env::consts::ARCH {
+        "x86_64" => Ok("x86_64"),
+        "aarch64" => Ok("aarch64"),
+        other => Err(format!("unsupported update architecture: {other}")),
+    }
+}
+
+fn deb_arch() -> Result<&'static str, String> {
+    match std::env::consts::ARCH {
+        "x86_64" => Ok("amd64"),
+        "aarch64" => Ok("arm64"),
+        other => Err(format!("unsupported update architecture: {other}")),
+    }
+}
+
+fn version_is_newer(candidate: &str, current: &str) -> bool {
+    let Some(candidate) = parse_semver_triplet(candidate) else {
+        return candidate > current;
+    };
+    let Some(current) = parse_semver_triplet(current) else {
+        return true;
+    };
+    candidate > current
+}
+
+fn parse_semver_triplet(value: &str) -> Option<(u64, u64, u64)> {
+    let value = value.trim_start_matches('v');
+    let core = value.split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
 }
 
 fn daemon_handoff_start_blocking() -> Result<DaemonHandoffStatus, String> {
@@ -2141,6 +2642,10 @@ fn main() {
             profile_vpn_password_status,
             profile_forget_vpn_password,
             github_sync_history,
+            update_check,
+            update_prepare,
+            update_install,
+            update_relaunch,
             daemon_handoff_status,
             daemon_handoff_start,
             github_sync_status,
@@ -2162,11 +2667,12 @@ fn main() {
 mod tests {
     use super::{
         command_output_detail, duplicate_profile_name, github_device_flow_start_result,
-        github_sync_status_response, github_sync_upload_error, load_github_sync_history_from_path,
-        profiles_from_dir, record_github_sync_history_at, render_profile_toml,
-        render_sync_profile_toml, restored_conflict_profile_name, stored_vpn_password_field,
-        sync_profile_document, tray_status_text, CreateProfileInput, GithubSyncAuthState,
-        GithubSyncManifestState,
+        github_release_asset_url, github_sync_status_response, github_sync_upload_error,
+        load_github_sync_history_from_path, parse_release_tag, profiles_from_dir,
+        record_github_sync_history_at, render_profile_toml, render_sync_profile_toml,
+        restored_conflict_profile_name, stored_vpn_password_field, sync_profile_document,
+        tray_status_text, update_asset_name, version_is_newer, CreateProfileInput,
+        GithubSyncAuthState, GithubSyncManifestState, UpdateInstallMethod,
     };
     use oc_oxide_config::parse_toml_vpn_profile;
     use oc_oxide_ipc::{AuthPrompt, AuthPromptField, AuthPromptFieldKind, DaemonState};
@@ -2441,6 +2947,57 @@ mod tests {
     #[test]
     fn command_output_detail_falls_back_to_stdout() {
         assert_eq!(command_output_detail(b"", b"started\n"), "started");
+    }
+
+    #[test]
+    fn version_compare_handles_tag_prefix_and_patch_versions() {
+        assert!(version_is_newer("v0.1.2", "0.1.1"));
+        assert!(version_is_newer("0.2.0", "0.1.9"));
+        assert!(!version_is_newer("v0.1.1", "0.1.1"));
+        assert!(!version_is_newer("0.1.0", "0.1.1"));
+    }
+
+    #[test]
+    fn update_asset_name_matches_release_packaging_names() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            assert_eq!(
+                update_asset_name("v0.1.2", UpdateInstallMethod::Deb).unwrap(),
+                "oc-oxide_0.1.2_amd64.deb"
+            );
+            assert_eq!(
+                update_asset_name("0.1.2", UpdateInstallMethod::Tarball).unwrap(),
+                "oc-oxide-0.1.2-linux-x86_64.tar.gz"
+            );
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            assert_eq!(
+                update_asset_name("v0.1.2", UpdateInstallMethod::Deb).unwrap(),
+                "oc-oxide_0.1.2_arm64.deb"
+            );
+            assert_eq!(
+                update_asset_name("0.1.2", UpdateInstallMethod::Tarball).unwrap(),
+                "oc-oxide-0.1.2-linux-aarch64.tar.gz"
+            );
+        }
+    }
+
+    #[test]
+    fn update_release_redirect_helpers_avoid_github_api() {
+        assert_eq!(
+            parse_release_tag("https://github.com/fudanglp/oc-oxide/releases/tag/v0.1.2"),
+            Some("v0.1.2".to_owned())
+        );
+        assert_eq!(
+            parse_release_tag("/fudanglp/oc-oxide/releases/tag/v0.1.2?expanded=true"),
+            Some("v0.1.2".to_owned())
+        );
+        assert_eq!(
+            github_release_asset_url("fudanglp/oc-oxide", "v0.1.2", "oc-oxide_0.1.2_amd64.deb"),
+            "https://github.com/fudanglp/oc-oxide/releases/download/v0.1.2/oc-oxide_0.1.2_amd64.deb"
+        );
     }
 
     #[test]

@@ -247,6 +247,35 @@ does not invent a signature. In GitHub Actions, set `TAURI_UPDATE_SIGNATURE` to
 emit `latest.json` for tag builds. The file is included in workflow artifacts
 and GitHub Release assets when generated.
 
+The desktop app also has a system-package update path for Linux installs. It
+checks the GitHub Releases `latest` redirect in the background after startup,
+avoiding the GitHub REST API rate limit. The Settings view can explicitly
+check, download, verify, and install a release artifact. The desktop process
+downloads the matching `.deb` or tarball into the user's XDG cache directory
+and verifies the release `.sha256` before requesting elevated installation.
+
+The elevated installer is intentionally small:
+
+```text
+/usr/libexec/oc-oxide/oc-oxide-update
+/usr/local/libexec/oc-oxide/oc-oxide-update
+```
+
+It accepts only an app-generated install manifest, performs final root-side
+validation of the version, architecture, artifact name, and sha256 digest, then
+installs the package. It does not download files or relaunch the desktop UI.
+After a successful install, the desktop app requests its own relaunch.
+
+The packaged polkit file includes a dedicated update action:
+
+```text
+com.github.fudanglp.oc-oxide.update
+com.github.fudanglp.oc-oxide.update-local
+```
+
+These actions are separate from daemon connection control and require admin
+authorization.
+
 ## Verification
 
 Useful local checks:

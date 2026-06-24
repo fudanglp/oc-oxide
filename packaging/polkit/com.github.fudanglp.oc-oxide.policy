@@ -15,4 +15,28 @@
       <allow_active>yes</allow_active>
     </defaults>
   </action>
+
+  <action id="com.github.fudanglp.oc-oxide.update">
+    <description>Install oc-oxide updates</description>
+    <message>Authentication is required to install oc-oxide updates</message>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/oc-oxide/oc-oxide-update</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <action id="com.github.fudanglp.oc-oxide.update-local">
+    <description>Install oc-oxide updates</description>
+    <message>Authentication is required to install oc-oxide updates</message>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/oc-oxide/oc-oxide-update</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

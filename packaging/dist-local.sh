@@ -38,6 +38,8 @@ copy_binary() {
 copy_binary "$ROOT_DIR/target/release/oc-oxide-desktop" "$STAGE_DIR/libexec/oc-oxide/oc-oxide-desktop"
 copy_binary "$ROOT_DIR/target/release/oc-oxide-daemon" "$STAGE_DIR/libexec/oc-oxide/oc-oxide-daemon"
 copy_binary "$ROOT_DIR/target/release/ocx" "$STAGE_DIR/libexec/oc-oxide/ocx"
+install -m 0755 "$ROOT_DIR/packaging/linux/oc-oxide-update.sh" \
+  "$STAGE_DIR/libexec/oc-oxide/oc-oxide-update"
 
 openconnect_lib=$(find "$ROOT_DIR/target/release/build" -path '*/openconnect-install/lib/libopenconnect.so*' -type f 2>/dev/null | sort | tail -n 1)
 if [ -z "$openconnect_lib" ]; then
