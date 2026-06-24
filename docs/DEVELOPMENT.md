@@ -138,7 +138,7 @@ The packaged daemon is an idle system service. Installing, starting, or
 restarting it must not connect a VPN profile.
 
 ```sh
-sudo apt install ./dist/oc-oxide_0.1.0_amd64.deb
+sudo apt install ./dist/oc-oxide_0.1.1_amd64.deb
 systemctl status oc-oxide-daemon.service --no-pager
 ```
 
@@ -337,7 +337,7 @@ The desktop and daemon binaries are from different builds. Reinstall or restart
 the packaged daemon:
 
 ```sh
-sudo apt install --reinstall ./dist/oc-oxide_0.1.0_amd64.deb
+sudo apt install --reinstall ./dist/oc-oxide_0.1.1_amd64.deb
 sudo systemctl restart oc-oxide-daemon.service
 ```
 

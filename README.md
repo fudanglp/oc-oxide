@@ -67,7 +67,7 @@ curl -LsSf https://oc-oxide.glp.ai/install.sh | sh
 Install a specific release:
 
 ```sh
-curl -LsSf https://oc-oxide.glp.ai/install.sh | sh -s -- --version v0.1.0
+curl -LsSf https://oc-oxide.glp.ai/install.sh | sh -s -- --version v0.1.1
 ```
 
 The installer downloads the matching GitHub Release artifact, verifies its

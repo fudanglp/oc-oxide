@@ -20,7 +20,7 @@ curl -LsSf https://oc-oxide.glp.ai/install.sh | sh
 Install a specific release:
 
 ```sh
-curl -LsSf https://oc-oxide.glp.ai/install.sh | sh -s -- --version v0.1.0
+curl -LsSf https://oc-oxide.glp.ai/install.sh | sh -s -- --version v0.1.1
 ```
 
 The script lives in `packaging/linux/install-release.sh`. The Pages workflow

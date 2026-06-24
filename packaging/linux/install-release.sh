@@ -14,7 +14,7 @@ Downloads an oc-oxide release artifact from GitHub Releases, verifies its
 .sha256 file, and installs it through the Debian package or tarball installer.
 
 Environment:
-  OC_OXIDE_VERSION         Release tag, for example v0.1.0
+  OC_OXIDE_VERSION         Release tag, for example v0.1.1
   OC_OXIDE_INSTALL_METHOD  auto, deb, or tarball
   OC_OXIDE_REPO            GitHub repo, default fudanglp/oc-oxide
 EOF

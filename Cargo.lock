@@ -2703,14 +2703,14 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-auth"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "oc-oxide-openconnect-sys",
 ]
 
 [[package]]
 name = "oc-oxide-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyring",
  "oc-oxide-dns",
@@ -2722,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-daemon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "oc-oxide-auth",
@@ -2738,7 +2738,7 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "oc-oxide-config",
  "oc-oxide-ipc",
@@ -2752,11 +2752,11 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-dns"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "oc-oxide-ipc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2764,7 +2764,7 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-net"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures",
  "rtnetlink",
@@ -2773,7 +2773,7 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-openconnect-sys"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bindgen",
  "cc",
@@ -2781,7 +2781,7 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-policy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "oc-oxide-dns",
  "oc-oxide-net",
@@ -2789,7 +2789,7 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-sync"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "keyring",
@@ -2799,7 +2799,7 @@ dependencies = [
 
 [[package]]
 name = "oc-oxide-tunnel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "oc-oxide-auth",
  "oc-oxide-config",
@@ -2808,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "ocx"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "oc-oxide-auth",
  "oc-oxide-config",
