@@ -2438,10 +2438,8 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let top_separator = PredefinedMenuItem::separator(app)?;
     let bottom_separator = PredefinedMenuItem::separator(app)?;
     let connected_icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?.to_owned();
-    let disconnected_icon = Image::from_bytes(include_bytes!(
-        "../icons/tray-disconnected-strong-32x32.png"
-    ))?
-    .to_owned();
+    let disconnected_icon =
+        Image::from_bytes(include_bytes!("../icons/inactive-32x32.png"))?.to_owned();
     let menu = Menu::with_items(
         app,
         &[

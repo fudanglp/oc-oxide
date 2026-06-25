@@ -11,6 +11,7 @@ DIST_ROOT=${DIST_ROOT:-"$ROOT_DIR/dist"}
 VERSION=${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT_DIR/Cargo.toml" | head -n 1)}
 ARCH=${ARCH:-$(uname -m)}
 DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}"}
+DESKTOP_ID="com.github.fudanglp.oc-oxide"
 
 case "$ARCH" in
   x86_64) DEB_ARCH=amd64 ;;
@@ -34,7 +35,10 @@ mkdir -p \
   "$DEB_ROOT/usr/libexec/oc-oxide" \
   "$DEB_ROOT/usr/share/applications" \
   "$DEB_ROOT/usr/share/doc/oc-oxide" \
+  "$DEB_ROOT/usr/share/icons/hicolor/32x32/apps" \
+  "$DEB_ROOT/usr/share/icons/hicolor/128x128/apps" \
   "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps" \
+  "$DEB_ROOT/usr/share/icons/hicolor/512x512/apps" \
   "$DEB_ROOT/usr/share/polkit-1/actions" \
   "$DEB_ROOT/usr/lib/systemd/system"
 
@@ -43,9 +47,11 @@ cp "$STAGE_DIR/bin/oc-oxide-daemon" "$DEB_ROOT/usr/bin/"
 cp "$STAGE_DIR/bin/ocx" "$DEB_ROOT/usr/bin/"
 cp "$STAGE_DIR/libexec/oc-oxide/"* "$DEB_ROOT/usr/libexec/oc-oxide/"
 cp -P "$STAGE_DIR"/lib/libopenconnect.so* "$DEB_ROOT/usr/lib/"
-cp "$STAGE_DIR/share/applications/oc-oxide.desktop" "$DEB_ROOT/usr/share/applications/"
-cp "$STAGE_DIR/share/icons/hicolor/256x256/apps/oc-oxide.png" \
-  "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps/"
+cp "$STAGE_DIR/share/applications/${DESKTOP_ID}.desktop" "$DEB_ROOT/usr/share/applications/"
+for size in 32 128 256 512; do
+  cp "$STAGE_DIR/share/icons/hicolor/${size}x${size}/apps/${DESKTOP_ID}.png" \
+    "$DEB_ROOT/usr/share/icons/hicolor/${size}x${size}/apps/"
+done
 cp "$STAGE_DIR/share/polkit-1/actions/com.github.fudanglp.oc-oxide.policy" \
   "$DEB_ROOT/usr/share/polkit-1/actions/"
 cp "$STAGE_DIR/INSTALL.md" "$DEB_ROOT/usr/share/doc/oc-oxide/INSTALL.md"
@@ -80,6 +86,9 @@ case "${1:-}" in
     if command -v update-desktop-database >/dev/null 2>&1; then
       update-desktop-database /usr/share/applications || true
     fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+      gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+    fi
     ;;
 esac
 exit 0
@@ -110,6 +119,9 @@ case "${1:-}" in
     fi
     if command -v update-desktop-database >/dev/null 2>&1; then
       update-desktop-database /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+      gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
     fi
     ;;
 esac

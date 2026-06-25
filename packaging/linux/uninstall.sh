@@ -4,6 +4,7 @@ set -eu
 PREFIX=${PREFIX:-/usr/local}
 SYSTEMD_DIR=${SYSTEMD_DIR:-/etc/systemd/system}
 SKIP_SYSTEMD=${SKIP_SYSTEMD:-0}
+DESKTOP_ID="com.github.fudanglp.oc-oxide"
 
 if [ "$SKIP_SYSTEMD" != "1" ] && command -v systemctl >/dev/null 2>&1; then
   systemctl stop oc-oxide-daemon.service || true
@@ -14,7 +15,12 @@ rm -f "$PREFIX/bin/oc-oxide" \
   "$PREFIX/bin/oc-oxide-daemon" \
   "$PREFIX/bin/ocx" \
   "$PREFIX/share/applications/oc-oxide.desktop" \
+  "$PREFIX/share/applications/${DESKTOP_ID}.desktop" \
+  "$PREFIX/share/icons/hicolor/32x32/apps/${DESKTOP_ID}.png" \
+  "$PREFIX/share/icons/hicolor/128x128/apps/${DESKTOP_ID}.png" \
   "$PREFIX/share/icons/hicolor/256x256/apps/oc-oxide.png" \
+  "$PREFIX/share/icons/hicolor/256x256/apps/${DESKTOP_ID}.png" \
+  "$PREFIX/share/icons/hicolor/512x512/apps/${DESKTOP_ID}.png" \
   "$PREFIX/share/polkit-1/actions/com.github.fudanglp.oc-oxide.policy"
 
 rm -f "$PREFIX/libexec/oc-oxide/oc-oxide-desktop" \
@@ -40,6 +46,10 @@ fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$PREFIX/share/applications" || true
+fi
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t -f "$PREFIX/share/icons/hicolor" || true
 fi
 
 cat <<'EOF'

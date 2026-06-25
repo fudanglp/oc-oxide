@@ -59,8 +59,8 @@ The layout includes:
 - `bin/` wrapper scripts for `oc-oxide`, `oc-oxide-daemon`, and `ocx`
 - `libexec/oc-oxide/` release binaries
 - `lib/libopenconnect.so*` from the vendored OpenConnect build
-- `share/applications/oc-oxide.desktop`
-- `share/icons/hicolor/256x256/apps/oc-oxide.png`
+- `share/applications/com.github.fudanglp.oc-oxide.desktop`
+- `share/icons/hicolor/<size>x<size>/apps/com.github.fudanglp.oc-oxide.png`
 - `systemd/oc-oxide-daemon.service`
 - `install.sh`
 - `uninstall.sh`
@@ -134,7 +134,7 @@ The Debian package installs to system paths:
 - `/usr/libexec/oc-oxide`
 - `/usr/lib`
 - `/usr/share/applications`
-- `/usr/share/icons/hicolor/256x256/apps`
+- `/usr/share/icons/hicolor/*/apps`
 - `/usr/share/polkit-1/actions`
 - `/usr/lib/systemd/system`
 

@@ -8,6 +8,7 @@ VERSION=${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT_DIR/Cargo.toml" 
 ARCH=${ARCH:-$(uname -m)}
 DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}"}
 STAGE_DIR="$DIST_ROOT/$DIST_NAME"
+DESKTOP_ID="com.github.fudanglp.oc-oxide"
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
   (cd "$ROOT_DIR" && cargo build --release -p oc-oxide-daemon -p ocx)
@@ -20,7 +21,10 @@ mkdir -p \
   "$STAGE_DIR/lib" \
   "$STAGE_DIR/libexec/oc-oxide" \
   "$STAGE_DIR/share/applications" \
+  "$STAGE_DIR/share/icons/hicolor/32x32/apps" \
+  "$STAGE_DIR/share/icons/hicolor/128x128/apps" \
   "$STAGE_DIR/share/icons/hicolor/256x256/apps" \
+  "$STAGE_DIR/share/icons/hicolor/512x512/apps" \
   "$STAGE_DIR/share/polkit-1/actions" \
   "$STAGE_DIR/systemd"
 
@@ -68,18 +72,22 @@ make_wrapper ocx ocx
 cp "$ROOT_DIR/packaging/systemd/oc-oxide-daemon.service" "$STAGE_DIR/systemd/"
 cp "$ROOT_DIR/packaging/polkit/com.github.fudanglp.oc-oxide.policy" \
   "$STAGE_DIR/share/polkit-1/actions/"
-cp "$ROOT_DIR/apps/desktop/src-tauri/icons/256x256.png" \
-  "$STAGE_DIR/share/icons/hicolor/256x256/apps/oc-oxide.png"
+for size in 32 128 256 512; do
+  cp "$ROOT_DIR/apps/desktop/src-tauri/icons/${size}x${size}.png" \
+    "$STAGE_DIR/share/icons/hicolor/${size}x${size}/apps/${DESKTOP_ID}.png"
+done
 
-cat > "$STAGE_DIR/share/applications/oc-oxide.desktop" <<'EOF'
+cat > "$STAGE_DIR/share/applications/${DESKTOP_ID}.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=oc-oxide
 Comment=OpenConnect desktop helper
 Exec=oc-oxide
-Icon=oc-oxide
+Icon=${DESKTOP_ID}
 Terminal=false
-Categories=Network;Security;
+Categories=Network;
+StartupNotify=true
+StartupWMClass=${DESKTOP_ID}
 EOF
 
 cat > "$STAGE_DIR/INSTALL.md" <<'EOF'
@@ -99,7 +107,7 @@ The installer copies:
 - `libexec/oc-oxide/` binaries to `/usr/local/libexec/oc-oxide`
 - `uninstall.sh` to `/usr/local/libexec/oc-oxide/uninstall.sh`
 - `lib/libopenconnect.so*` to `/usr/local/lib`
-- the desktop entry and icon to `/usr/local/share`
+- the desktop entry and icons to `/usr/local/share`
 - the polkit action to `/usr/local/share/polkit-1/actions`
 - the systemd unit to `/etc/systemd/system`
 - an enabled, idle `oc-oxide-daemon.service`
@@ -126,8 +134,13 @@ set -eu
 PREFIX=${PREFIX:-/usr/local}
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
+DESKTOP_ID="com.github.fudanglp.oc-oxide"
 install -d "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/libexec/oc-oxide" \
-  "$PREFIX/share/applications" "$PREFIX/share/icons/hicolor/256x256/apps"
+  "$PREFIX/share/applications" \
+  "$PREFIX/share/icons/hicolor/32x32/apps" \
+  "$PREFIX/share/icons/hicolor/128x128/apps" \
+  "$PREFIX/share/icons/hicolor/256x256/apps" \
+  "$PREFIX/share/icons/hicolor/512x512/apps"
 install -m 0755 "$ROOT_DIR/bin/oc-oxide" "$PREFIX/bin/oc-oxide"
 install -m 0755 "$ROOT_DIR/bin/oc-oxide-daemon" "$PREFIX/bin/oc-oxide-daemon"
 install -m 0755 "$ROOT_DIR/bin/ocx" "$PREFIX/bin/ocx"
@@ -135,12 +148,18 @@ install -m 0755 "$ROOT_DIR/libexec/oc-oxide/oc-oxide-desktop" "$PREFIX/libexec/o
 install -m 0755 "$ROOT_DIR/libexec/oc-oxide/oc-oxide-daemon" "$PREFIX/libexec/oc-oxide/oc-oxide-daemon"
 install -m 0755 "$ROOT_DIR/libexec/oc-oxide/ocx" "$PREFIX/libexec/oc-oxide/ocx"
 cp -P "$ROOT_DIR"/lib/libopenconnect.so* "$PREFIX/lib/"
-install -m 0644 "$ROOT_DIR/share/applications/oc-oxide.desktop" "$PREFIX/share/applications/oc-oxide.desktop"
-install -m 0644 "$ROOT_DIR/share/icons/hicolor/256x256/apps/oc-oxide.png" "$PREFIX/share/icons/hicolor/256x256/apps/oc-oxide.png"
+install -m 0644 "$ROOT_DIR/share/applications/${DESKTOP_ID}.desktop" "$PREFIX/share/applications/${DESKTOP_ID}.desktop"
+for size in 32 128 256 512; do
+  install -m 0644 "$ROOT_DIR/share/icons/hicolor/${size}x${size}/apps/${DESKTOP_ID}.png" "$PREFIX/share/icons/hicolor/${size}x${size}/apps/${DESKTOP_ID}.png"
+done
 
 if [ -d /etc/systemd/system ]; then
   install -m 0644 "$ROOT_DIR/systemd/oc-oxide-daemon.service" /etc/systemd/system/oc-oxide-daemon.service
   systemctl daemon-reload || true
+fi
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t -f "$PREFIX/share/icons/hicolor" || true
 fi
 EOF
 fi
