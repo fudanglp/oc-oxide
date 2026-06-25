@@ -81,11 +81,14 @@ cat > "$STAGE_DIR/share/applications/${DESKTOP_ID}.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=oc-oxide
+GenericName=VPN Client
 Comment=OpenConnect desktop helper
+TryExec=oc-oxide
 Exec=oc-oxide
 Icon=${DESKTOP_ID}
 Terminal=false
-Categories=Network;
+Categories=Network;RemoteAccess;
+Keywords=vpn;openconnect;network;security;
 StartupNotify=true
 StartupWMClass=${DESKTOP_ID}
 EOF
