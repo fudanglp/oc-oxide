@@ -618,8 +618,8 @@ export default function App() {
   async function disconnect() {
     dispatch({ type: "busy", busy: true });
     try {
-      await invoke("daemon_disconnect");
-      await refreshStatus(dispatch);
+      const exchange = await invoke<IpcExchange>("daemon_disconnect");
+      applyExchange(exchange, dispatch);
     } catch (error) {
       dispatch({ type: "error", message: formatError(error) });
     } finally {
@@ -4500,10 +4500,10 @@ async function refreshDiagnostics(dispatch: React.Dispatch<Action>) {
 }
 
 function applyExchange(exchange: IpcExchange, dispatch: React.Dispatch<Action>) {
-  applyResponse(exchange.response, dispatch);
   for (const event of exchange.events) {
     dispatch({ type: "event", event });
   }
+  applyResponse(exchange.response, dispatch);
 }
 
 function applyResponse(response: IpcResponse, dispatch: React.Dispatch<Action>) {

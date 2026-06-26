@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
 use oc_oxide_config::{
@@ -61,6 +61,9 @@ const UPDATE_WRAPPER_ENV: &str = "OC_OXIDE_UPDATE_WRAPPER";
 const DEFAULT_UPDATE_REPO: &str = "fudanglp/oc-oxide";
 const LOCAL_UPDATE_WRAPPER: &str = "/usr/local/libexec/oc-oxide/oc-oxide-update";
 const SYSTEM_UPDATE_WRAPPER: &str = "/usr/libexec/oc-oxide/oc-oxide-update";
+const IPC_ONE_SHOT_TIMEOUT: Duration = Duration::from_secs(5);
+const DISCONNECT_STATUS_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+const DISCONNECT_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Default)]
 struct DesktopState {
@@ -1438,13 +1441,34 @@ fn daemon_submit_auth(
 }
 
 #[tauri::command]
-fn daemon_disconnect(app: AppHandle, state: State<'_, DesktopState>) -> Result<(), String> {
+fn daemon_disconnect(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<IpcExchange, String> {
     update_tray_status(&app, DaemonState::Disconnecting, None, None);
-    if write_active_command(&state, &IpcCommand::Disconnect).is_ok() {
-        return Ok(());
+    let mut events = Vec::new();
+
+    if write_active_command(&state, &IpcCommand::Disconnect).is_err() {
+        let mut disconnect_exchange = send_one_shot(IpcCommand::Disconnect)?;
+        events.append(&mut disconnect_exchange.events);
+        if !matches!(disconnect_exchange.response, IpcResponse::Accepted) {
+            return Ok(IpcExchange {
+                response: disconnect_exchange.response,
+                events,
+            });
+        }
     }
 
-    send_one_shot(IpcCommand::Disconnect).map(|_| ())
+    let mut status_exchange = wait_for_disconnect_status()?;
+    events.append(&mut status_exchange.events);
+    if let IpcResponse::Status(status) = &status_exchange.response {
+        update_tray_status_from_status(&app, status);
+    }
+
+    Ok(IpcExchange {
+        response: status_exchange.response,
+        events,
+    })
 }
 
 fn read_daemon_stream(
@@ -1625,6 +1649,12 @@ fn write_active_command(
 
 fn send_one_shot(command: IpcCommand) -> Result<IpcExchange, String> {
     let mut stream = connect_daemon_socket()?;
+    stream
+        .set_read_timeout(Some(IPC_ONE_SHOT_TIMEOUT))
+        .map_err(|err| format!("failed to set daemon read timeout: {err}"))?;
+    stream
+        .set_write_timeout(Some(IPC_ONE_SHOT_TIMEOUT))
+        .map_err(|err| format!("failed to set daemon write timeout: {err}"))?;
     write_command(&mut stream, &command)?;
 
     let mut reader = BufReader::new(stream);
@@ -1644,6 +1674,35 @@ fn send_one_shot(command: IpcCommand) -> Result<IpcExchange, String> {
         }
 
         events.push(decode_event_line(&line).map_err(|err| err.to_string())?);
+    }
+}
+
+fn wait_for_disconnect_status() -> Result<IpcExchange, String> {
+    let deadline = Instant::now() + DISCONNECT_STATUS_WAIT_TIMEOUT;
+    let mut events = Vec::new();
+
+    loop {
+        let mut exchange = send_one_shot(IpcCommand::Status)?;
+        events.append(&mut exchange.events);
+
+        let should_return = match &exchange.response {
+            IpcResponse::Status(status) => {
+                matches!(
+                    status.state,
+                    DaemonState::Idle | DaemonState::Disconnected | DaemonState::Error
+                ) || Instant::now() >= deadline
+            }
+            _ => true,
+        };
+
+        if should_return {
+            return Ok(IpcExchange {
+                response: exchange.response,
+                events,
+            });
+        }
+
+        thread::sleep(DISCONNECT_STATUS_POLL_INTERVAL);
     }
 }
 
@@ -2562,48 +2621,56 @@ fn update_tray_status_context(
     interface: Option<&str>,
     exact_snapshot: bool,
 ) {
-    let desktop_state = app.state::<DesktopState>();
-    let Ok(mut guard) = desktop_state.tray.lock() else {
-        return;
-    };
-    let Some(tray) = guard.as_mut() else {
-        return;
+    let (status_item, tray_icon, icon, status_text) = {
+        let desktop_state = app.state::<DesktopState>();
+        let Ok(mut guard) = desktop_state.tray.lock() else {
+            return;
+        };
+        let Some(tray) = guard.as_mut() else {
+            return;
+        };
+
+        if exact_snapshot {
+            tray.active_profile = profile.map(str::to_owned);
+            tray.interface = interface.map(str::to_owned);
+        } else {
+            if let Some(profile) = profile {
+                tray.active_profile = Some(profile.to_owned());
+            }
+            if let Some(interface) = interface {
+                tray.interface = Some(interface.to_owned());
+            }
+            if matches!(state, DaemonState::Configuring) {
+                tray.interface = None;
+            }
+            if matches!(state, DaemonState::Idle | DaemonState::Disconnected) {
+                tray.active_profile = None;
+                tray.interface = None;
+            }
+        }
+
+        let status_text = tray_status_text(
+            state,
+            tray.active_profile.as_deref(),
+            tray.interface.as_deref(),
+        );
+        let icon = if matches!(state, DaemonState::Connected) {
+            tray.connected_icon.clone()
+        } else {
+            tray.disconnected_icon.clone()
+        };
+
+        (
+            tray.status_item.clone(),
+            tray.icon.clone(),
+            icon,
+            status_text,
+        )
     };
 
-    if exact_snapshot {
-        tray.active_profile = profile.map(str::to_owned);
-        tray.interface = interface.map(str::to_owned);
-    } else {
-        if let Some(profile) = profile {
-            tray.active_profile = Some(profile.to_owned());
-        }
-        if let Some(interface) = interface {
-            tray.interface = Some(interface.to_owned());
-        }
-        if matches!(state, DaemonState::Configuring) {
-            tray.interface = None;
-        }
-        if matches!(state, DaemonState::Idle | DaemonState::Disconnected) {
-            tray.active_profile = None;
-            tray.interface = None;
-        }
-    }
-
-    let status_text = tray_status_text(
-        state,
-        tray.active_profile.as_deref(),
-        tray.interface.as_deref(),
-    );
-    let _ = tray.status_item.set_text(&status_text);
-    let _ = tray
-        .icon
-        .set_tooltip(Some(format!("oc-oxide: {status_text}")));
-    let icon = if matches!(state, DaemonState::Connected) {
-        tray.connected_icon.clone()
-    } else {
-        tray.disconnected_icon.clone()
-    };
-    let _ = tray.icon.set_icon(Some(icon));
+    let _ = status_item.set_text(&status_text);
+    let _ = tray_icon.set_tooltip(Some(format!("oc-oxide: {status_text}")));
+    let _ = tray_icon.set_icon(Some(icon));
 }
 
 fn tray_status_text(state: DaemonState, profile: Option<&str>, interface: Option<&str>) -> String {
