@@ -27,6 +27,7 @@ help:
 	@printf '%s\n' '  make sign-artifacts     GPG-sign dist artifacts'
 	@printf '%s\n' '  make apt-repo           Build flat apt repository metadata'
 	@printf '%s\n' '  make updater-json       Generate Tauri updater latest.json'
+	@printf '%s\n' '  make sync-version       Sync manifests from version.yml'
 	@printf '%s\n' '  make check              Run Rust checks and frontend type/build checks'
 	@printf '%s\n' '  make test               Run Rust workspace tests'
 	@printf '%s\n' '  make fmt                Format Rust code'
@@ -82,6 +83,10 @@ apt-repo:
 .PHONY: updater-json
 updater-json:
 	./packaging/linux/generate-updater-json.sh
+
+.PHONY: sync-version
+sync-version:
+	./packaging/sync-version.sh
 
 .PHONY: check
 check:
