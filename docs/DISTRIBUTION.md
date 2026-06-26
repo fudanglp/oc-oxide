@@ -165,6 +165,19 @@ and `/etc/oc-oxide` only if those directories are empty. User-created system
 profiles are intentionally preserved. User config profiles and OS keyring
 entries are outside the Debian package and are not removed.
 
+## Release Version
+
+`version.yml` is the single human-edited release version source. Before
+building or tagging a release, update `version.yml` and run:
+
+```sh
+make sync-version
+```
+
+The sync target propagates the version to Cargo, npm, and Tauri manifests. It
+lets Cargo and npm update their own lockfiles, so release bumps should not
+manually edit `Cargo.lock` or `apps/desktop/package-lock.json`.
+
 ## GitHub Release Workflow
 
 `.github/workflows/release.yml` builds the Linux release artifacts on

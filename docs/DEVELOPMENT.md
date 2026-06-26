@@ -110,6 +110,26 @@ cargo check -p oc-oxide-desktop
 cd apps/desktop && npm run build
 ```
 
+## Version Sync
+
+`version.yml` is the human-edited release version source. Do not hand-edit the
+version fields in `Cargo.lock` or `apps/desktop/package-lock.json`.
+
+To bump the project version:
+
+```sh
+$EDITOR version.yml
+make sync-version
+```
+
+`make sync-version` updates `Cargo.toml` and the Tauri config directly, then
+delegates generated metadata to the native tools:
+
+- `cargo update --workspace` refreshes oc-oxide workspace package versions in
+  `Cargo.lock` without upgrading third-party dependencies.
+- `npm version --no-git-tag-version --allow-same-version` updates
+  `apps/desktop/package.json` and `apps/desktop/package-lock.json`.
+
 ## Tunnel Work References
 
 Most frontend, packaging, profile, and UI work does not require reading the
