@@ -11,6 +11,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  Info,
   KeyRound,
   Loader2,
   LogIn,
@@ -66,7 +67,7 @@ type LogEntry = {
 
 type AppView = "profiles" | "secrets" | "diagnostics" | "logs" | "settings";
 
-type SettingsSection = "updates" | "cloud_sync" | "general" | "security";
+type SettingsSection = "updates" | "cloud_sync" | "general" | "security" | "about";
 
 type ActivityItem = {
   id: AppView;
@@ -217,6 +218,13 @@ type UpdateState = {
   lastCheckedAt: number | null;
 };
 
+type AppInfo = {
+  name: string;
+  currentVersion: string;
+  identifier: string;
+  repositoryUrl: string;
+};
+
 type UpdateOperation = "idle" | "checking" | "downloading" | "installing";
 
 type CredentialState =
@@ -301,6 +309,7 @@ const settingsSectionItems: SettingsSectionItem[] = [
   { id: "cloud_sync", label: "Cloud Sync", icon: Cloud },
   { id: "general", label: "General", icon: SettingsIcon },
   { id: "security", label: "Security", icon: Shield },
+  { id: "about", label: "About", icon: Info },
 ];
 
 const viewCopy: Record<AppView, { title: string; eyebrow: string }> = {
@@ -484,6 +493,7 @@ export default function App() {
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateOperation, setUpdateOperation] = useState<UpdateOperation>("idle");
   const [updateAutoRefreshStarted, setUpdateAutoRefreshStarted] = useState(false);
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -501,6 +511,7 @@ export default function App() {
       dispatch({ type: "event", event: event.payload });
     });
 
+    void refreshAppInfo();
     void refreshAll();
     const updateTimer = window.setTimeout(() => {
       setUpdateAutoRefreshStarted(true);
@@ -696,11 +707,20 @@ export default function App() {
 
   async function refreshActiveView() {
     if (activeView === "settings") {
-      await Promise.all([refreshGithubSyncStatus(), refreshUpdateStatus(false)]);
+      await Promise.all([refreshAppInfo(), refreshGithubSyncStatus(), refreshUpdateStatus(false)]);
       return;
     }
 
     await refreshAll();
+  }
+
+  async function refreshAppInfo() {
+    try {
+      const detail = await invoke<AppInfo>("app_info");
+      setAppInfo(detail);
+    } catch {
+      setAppInfo(null);
+    }
   }
 
   async function refreshProfiles() {
@@ -1345,6 +1365,7 @@ export default function App() {
               updateState={updateState}
               updateBusy={updateBusy}
               updateOperation={updateOperation}
+              appInfo={appInfo}
               setCreateProfileDraft={setCreateProfileDraft}
               setCreateProfileFieldErrors={setCreateProfileFieldErrors}
               onCloseCreateProfile={closeCreateProfileTab}
@@ -1860,6 +1881,7 @@ function WorkbenchView({
   updateState,
   updateBusy,
   updateOperation,
+  appInfo,
   setCreateProfileDraft,
   setCreateProfileFieldErrors,
   onCloseCreateProfile,
@@ -1905,6 +1927,7 @@ function WorkbenchView({
   updateState: UpdateState;
   updateBusy: boolean;
   updateOperation: UpdateOperation;
+  appInfo: AppInfo | null;
   setCreateProfileDraft: React.Dispatch<React.SetStateAction<CreateProfileDraft>>;
   setCreateProfileFieldErrors: React.Dispatch<React.SetStateAction<CreateProfileFieldErrors>>;
   onCloseCreateProfile: () => void;
@@ -1946,6 +1969,7 @@ function WorkbenchView({
         updateState={updateState}
         updateBusy={updateBusy}
         updateOperation={updateOperation}
+        appInfo={appInfo}
         onStartGithubSyncLogin={onStartGithubSyncLogin}
         onInitGithubSyncManifest={onInitGithubSyncManifest}
         onUploadGithubSyncProfiles={onUploadGithubSyncProfiles}
@@ -2853,6 +2877,7 @@ function SettingsView({
   updateState,
   updateBusy,
   updateOperation,
+  appInfo,
   onStartGithubSyncLogin,
   onInitGithubSyncManifest,
   onUploadGithubSyncProfiles,
@@ -2872,6 +2897,7 @@ function SettingsView({
   updateState: UpdateState;
   updateBusy: boolean;
   updateOperation: UpdateOperation;
+  appInfo: AppInfo | null;
   onStartGithubSyncLogin: () => Promise<void>;
   onInitGithubSyncManifest: () => Promise<void>;
   onUploadGithubSyncProfiles: () => void;
@@ -2956,7 +2982,65 @@ function SettingsView({
           </div>
         </section>
       ) : null}
+
+      {activeSection === "about" ? <AboutSettings appInfo={appInfo} /> : null}
     </div>
+  );
+}
+
+function AboutSettings({ appInfo }: { appInfo: AppInfo | null }) {
+  const currentVersion = appInfo?.currentVersion ?? "unknown";
+  const repositoryUrl = appInfo?.repositoryUrl ?? "https://github.com/fudanglp/oc-oxide";
+  const releaseUrl =
+    appInfo?.currentVersion && appInfo.currentVersion !== "unknown"
+      ? `${repositoryUrl}/releases/tag/v${appInfo.currentVersion}`
+      : `${repositoryUrl}/releases`;
+
+  return (
+    <section className="rounded-md bg-card p-4">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Info className="h-4 w-4" />
+            About
+          </h2>
+          <div className="mt-1 text-xs font-semibold text-muted-foreground">
+            Local application metadata
+          </div>
+        </div>
+        <Badge variant="outline">v{currentVersion}</Badge>
+      </div>
+
+      <div className="responsive-main-panel grid gap-4">
+        <div className="rounded-md bg-muted p-3">
+          <dl className="responsive-description-list grid gap-x-3 gap-y-3 text-sm">
+            <dt className="text-muted-foreground">Application</dt>
+            <dd className="font-medium">{appInfo?.name ?? "oc-oxide"}</dd>
+            <dt className="text-muted-foreground">Version</dt>
+            <dd className="font-medium">v{currentVersion}</dd>
+            <dt className="text-muted-foreground">Identifier</dt>
+            <dd className="break-words font-medium">
+              {appInfo?.identifier ?? "com.github.fudanglp.oc-oxide"}
+            </dd>
+            <dt className="text-muted-foreground">Repository</dt>
+            <dd className="break-words font-medium">{repositoryUrl}</dd>
+          </dl>
+        </div>
+
+        <div className="rounded-md bg-muted p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 text-sm">
+              <div className="font-semibold text-foreground">Release page</div>
+              <div className="truncate text-muted-foreground">{releaseUrl}</div>
+            </div>
+            <Button type="button" variant="outline" onClick={() => void openExternal(releaseUrl)}>
+              <ExternalLink className="h-4 w-4" />
+              Open
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

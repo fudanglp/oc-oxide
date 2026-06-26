@@ -238,6 +238,15 @@ struct UpdateStatus {
     message: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppInfo {
+    name: String,
+    current_version: String,
+    identifier: String,
+    repository_url: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateInstallManifest {
@@ -540,6 +549,21 @@ async fn update_install(manifest_path: String) -> Result<String, String> {
 fn update_relaunch(app: AppHandle) -> Result<(), String> {
     app.request_restart();
     Ok(())
+}
+
+#[tauri::command]
+fn app_info(app: AppHandle) -> AppInfo {
+    let package_info = app.package_info();
+    let config = app.config();
+    AppInfo {
+        name: config
+            .product_name
+            .clone()
+            .unwrap_or_else(|| package_info.name.clone()),
+        current_version: package_info.version.to_string(),
+        identifier: config.identifier.clone(),
+        repository_url: env!("CARGO_PKG_REPOSITORY").to_owned(),
+    }
 }
 
 #[tauri::command]
@@ -2730,6 +2754,7 @@ fn main() {
             update_prepare,
             update_install,
             update_relaunch,
+            app_info,
             open_external_url,
             daemon_handoff_status,
             daemon_handoff_start,
