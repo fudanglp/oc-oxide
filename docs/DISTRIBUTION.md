@@ -9,6 +9,40 @@ The package helpers do not store credentials, VPN cookies, GitHub tokens,
 profile secrets, or router credentials. User profiles remain outside the
 repository, under the normal user config directory by default.
 
+## Ubuntu Compatibility
+
+Build separately on Ubuntu 24.04 and 26.04. The bundled `libopenconnect`
+links against the build system's libxml2 ABI: `libxml2.so.2` on 24.04 and
+`libxml2.so.16` on 26.04. A 24.04 binary must not be assumed to work after
+upgrading the operating system to 26.04.
+
+| Build OS | Debian artifact | Tarball artifact |
+| --- | --- | --- |
+| Ubuntu 24.04 | `oc-oxide_<version>_<arch>.deb` | `oc-oxide-<version>-linux-<arch>.tar.gz` |
+| Ubuntu 26.04 | `oc-oxide_<version>+ubuntu26.04_<arch>.deb` | `oc-oxide-<version>-linux-<arch>-ubuntu26.04.tar.gz` |
+
+24.04 retains the legacy asset names for existing clients. The release
+installer, desktop updater, and privileged update helper select artifacts
+using the running system's `/etc/os-release`, including after an OS upgrade.
+Older installed clients do not know these names; use the updated release
+installer to migrate them to the 26.04 build. There is no fallback to the
+24.04 artifact when the 26.04 artifact is missing.
+
+The Debian package version on 26.04 includes `+ubuntu26.04`, allowing apt to
+replace the 24.04 build at the same application version. Dependencies are
+generated with `dpkg-shlibdeps` from the desktop, daemon, CLI, and bundled
+library, including the correct libxml2 package and minimum library versions.
+Builds require `dpkg-dev`, `python3`, and the native development dependencies
+listed in `.github/workflows/release.yml`. Other Linux distributions still
+require native builds and are outside this Ubuntu compatibility matrix.
+
+Run `make package-deb` on the target Ubuntu release. The scripts detect the
+host release; do not rename an artifact to claim compatibility with another
+release. Cargo rebuilds the vendored C library when `/etc/os-release` changes,
+and packaging selects the library from that Cargo invocation's metadata.
+`SKIP_BUILD=1` requires a previous successful `make dist-local` (or packaging
+build) on the same OS.
+
 ## Release Installer
 
 The public one-line installer is published through GitHub Pages:
@@ -180,11 +214,15 @@ manually edit `Cargo.lock` or `apps/desktop/package-lock.json`.
 
 ## GitHub Release Workflow
 
-`.github/workflows/release.yml` builds the Linux release artifacts on
-`ubuntu-24.04`.
+.github/workflows/release.yml builds in separate `ubuntu:24.04` and
+`ubuntu:26.04` containers on an `ubuntu-24.04` runner. Cargo caches are isolated
+by Ubuntu release. Each job runs Rust and installer-selection tests, builds
+the package, installs it, checks runtime libraries, and starts an idle daemon
+to verify socket creation. A separate publish job waits for both builds.
 
-The workflow can be started manually with `workflow_dispatch`. Manual runs
-build and verify artifacts, then upload them as workflow artifacts.
+The workflow runs for pushes and pull requests to `master`, or manually with
+`workflow_dispatch`. These runs build and verify artifacts, then upload them
+as workflow artifacts without creating a release.
 
 Pushing a tag matching `v*` runs the same build and verification steps, then
 creates a GitHub Release for that tag with:
@@ -195,10 +233,11 @@ creates a GitHub Release for that tag with:
 - `oc-oxide-<version>-linux-<arch>.tar.gz.sha256`
 - `oc-oxide_<version>_<deb-arch>.deb`
 - `oc-oxide_<version>_<deb-arch>.deb.sha256`
+- the corresponding `+ubuntu26.04` Debian and `-ubuntu26.04` tarball artifacts
 
-The release workflow does not sign packages, publish an apt repository, or
-generate updater metadata unless the corresponding signing/update secrets are
-configured.
+The workflow generates an apt archive for each Ubuntu release. Signing and
+optional updater metadata require the corresponding signing/update secrets.
+It does not publish an apt server.
 
 ## Signing
 
@@ -241,8 +280,9 @@ dist/apt/
 ```
 
 The release workflow also archives this tree as
-`dist/oc-oxide-apt-repo.tar.gz` with a `.sha256` file so it can be attached to a
-GitHub Release or published to static hosting.
+`dist/oc-oxide-apt-repo-ubuntu<release>.tar.gz` with a `.sha256` file so it can be attached to a
+GitHub Release or published to static hosting. Keep the two Ubuntu repository
+archives at separate URLs; their packages target different system ABIs.
 
 ## Updater Metadata
 
@@ -256,8 +296,9 @@ make updater-json
 
 The script writes `dist/latest.json`. It requires a real Tauri updater
 signature through `TAURI_UPDATE_SIGNATURE` or `TAURI_UPDATE_SIGNATURE_FILE`; it
-does not invent a signature. In GitHub Actions, set `TAURI_UPDATE_SIGNATURE` to
-emit `latest.json` for tag builds. The file is included in workflow artifacts
+does not invent a signature. In GitHub Actions, set `TAURI_UPDATE_SIGNATURE` for the 24.04 tarball and
+`TAURI_UPDATE_SIGNATURE_UBUNTU26` for the distinct 26.04 tarball to emit
+`latest.json` and `latest-ubuntu26.04.json`, respectively, for tag builds. The latter uses the target `linux-<arch>-ubuntu26.04`. The file is included in workflow artifacts
 and GitHub Release assets when generated.
 
 The desktop app also has a system-package update path for Linux installs. It
@@ -290,6 +331,21 @@ These actions are separate from daemon connection control and require admin
 authorization.
 
 ## Verification
+
+Installer/update platform-selection tests (no installation or network access):
+
+```sh
+python3 packaging/linux/test_release_platform.py
+```
+
+In a disposable Ubuntu environment, run the install/socket smoke test as root:
+
+```sh
+./packaging/linux/smoke-test.sh /path/to/oc-oxide_<version>_<arch>.deb
+```
+
+The artifact examples below use 24.04 names; append the 26.04 suffixes from
+the compatibility table when testing a 26.04 build.
 
 Useful local checks:
 

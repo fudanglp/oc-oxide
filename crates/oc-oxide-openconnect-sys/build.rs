@@ -7,6 +7,8 @@ fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=csrc/progress_shim.c");
     println!("cargo:rerun-if-changed=../../vendor/openconnect");
+    // An OS upgrade can change the libxml2 ABI while Cargo's target survives.
+    println!("cargo:rerun-if-changed=/etc/os-release");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os != "linux" {
@@ -27,14 +29,8 @@ fn main() {
 }
 
 fn build_openconnect(vendor_dir: &Path, source_dir: &Path, build_dir: &Path, install_dir: &Path) {
-    let lib_dir = install_dir.join("lib");
-    let shared_lib = lib_dir.join("libopenconnect.so");
-    let static_lib = lib_dir.join("libopenconnect.a");
-
-    if shared_lib.exists() && static_lib.exists() {
-        return;
-    }
-
+    // Cargo already caches build-script execution. When it reruns, rebuild the
+    // C library too; existence alone does not establish ABI/source freshness.
     recreate_dir(source_dir);
     recreate_dir(build_dir);
     recreate_dir(install_dir);

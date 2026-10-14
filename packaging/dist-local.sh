@@ -3,15 +3,17 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DESKTOP_DIR="$ROOT_DIR/apps/desktop"
+. "$ROOT_DIR/packaging/linux/platform.sh"
 DIST_ROOT=${DIST_ROOT:-"$ROOT_DIR/dist"}
 VERSION=${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT_DIR/Cargo.toml" | head -n 1)}
 ARCH=${ARCH:-$(uname -m)}
-DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}"}
+DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}${PLATFORM_SUFFIX}"}
 STAGE_DIR="$DIST_ROOT/$DIST_NAME"
 DESKTOP_ID="com.github.fudanglp.oc-oxide"
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  (cd "$ROOT_DIR" && cargo build --release -p oc-oxide-daemon -p ocx)
+  mkdir -p "$ROOT_DIR/target"
+  (cd "$ROOT_DIR" && cargo build --locked --release -p oc-oxide-daemon -p ocx --message-format=json > target/release-build.json)
   (cd "$DESKTOP_DIR" && npm run tauri -- build --no-bundle)
 fi
 
@@ -45,13 +47,30 @@ copy_binary "$ROOT_DIR/target/release/ocx" "$STAGE_DIR/libexec/oc-oxide/ocx"
 install -m 0755 "$ROOT_DIR/packaging/linux/oc-oxide-update.sh" \
   "$STAGE_DIR/libexec/oc-oxide/oc-oxide-update"
 
-openconnect_lib=$(find "$ROOT_DIR/target/release/build" -path '*/openconnect-install/lib/libopenconnect.so*' -type f 2>/dev/null | sort | tail -n 1)
-if [ -z "$openconnect_lib" ]; then
-  printf 'missing vendored libopenconnect release build output\n' >&2
-  exit 1
-fi
-openconnect_lib_dir=$(dirname "$openconnect_lib")
+# Select the library from this Cargo build, not an arbitrary cached OUT_DIR.
+openconnect_lib_dir=$(python3 - "$ROOT_DIR/target/release-build.json" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+for line in Path(sys.argv[1]).read_text().splitlines():
+    event = json.loads(line)
+    if event.get("reason") == "build-script-executed" and "oc-oxide-openconnect-sys" in event.get("package_id", ""):
+        print(Path(event["out_dir"]) / "openconnect-install/lib")
+        break
+else:
+    sys.exit("missing vendored OpenConnect build metadata; run without SKIP_BUILD")
+PYTHON
+)
 cp -P "$openconnect_lib_dir"/libopenconnect.so* "$STAGE_DIR/lib/"
+
+# Fail packaging immediately when a bundled binary has an unresolved library.
+for binary in "$STAGE_DIR"/libexec/oc-oxide/oc-oxide-desktop "$STAGE_DIR"/libexec/oc-oxide/oc-oxide-daemon "$STAGE_DIR"/libexec/oc-oxide/ocx "$STAGE_DIR"/lib/libopenconnect.so; do
+  dependencies=$(LD_LIBRARY_PATH="$STAGE_DIR/lib" ldd "$binary")
+  if printf '%s\n' "$dependencies" | grep -q 'not found'; then
+    printf 'Unresolved dependencies in %s:\n%s\n' "$binary" "$dependencies" >&2
+    exit 1
+  fi
+done
 
 make_wrapper() {
   name=$1

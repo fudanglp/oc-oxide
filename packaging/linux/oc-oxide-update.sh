@@ -97,6 +97,22 @@ if [ "${#EXPECTED_SHA256}" -ne 64 ]; then
   die "expectedSha256 must be 64 hex characters"
 fi
 
+# Select by the running OS, including after a distribution upgrade.
+PLATFORM_SUFFIX=
+DEB_VERSION_SUFFIX=
+CURRENT_OS=$( . /etc/os-release; printf '%s:%s' "${ID:-}" "${VERSION_ID:-}" )
+case "$CURRENT_OS" in
+  ubuntu:24.04) ;;
+  ubuntu:26.04)
+    PLATFORM_SUFFIX=-ubuntu26.04
+    DEB_VERSION_SUFFIX=+ubuntu26.04
+    ;;
+  ubuntu:*)
+    printf 'Unsupported Ubuntu release: %s (expected 24.04 or 26.04)\n' "$CURRENT_OS" >&2
+    exit 1
+    ;;
+esac
+
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64)
@@ -115,10 +131,10 @@ esac
 ARTIFACT_VERSION=${VERSION#v}
 case "$METHOD" in
   deb)
-    EXPECTED_NAME="oc-oxide_${ARTIFACT_VERSION}_${DEB_ARCH}.deb"
+    EXPECTED_NAME="oc-oxide_${ARTIFACT_VERSION}${DEB_VERSION_SUFFIX}_${DEB_ARCH}.deb"
     ;;
   tarball)
-    EXPECTED_NAME="oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}.tar.gz"
+    EXPECTED_NAME="oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}${PLATFORM_SUFFIX}.tar.gz"
     ;;
   *)
     die "invalid update method: $METHOD"
@@ -157,7 +173,7 @@ case "$METHOD" in
     trap cleanup EXIT INT TERM
     printf '%s\n' "status: installing-tarball"
     tar -xzf "$ARTIFACT" -C "$TMPDIR"
-    INSTALL_DIR="$TMPDIR/oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}"
+    INSTALL_DIR="$TMPDIR/oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}${PLATFORM_SUFFIX}"
     [ -x "$INSTALL_DIR/install.sh" ] || die "tarball installer is missing"
     "$INSTALL_DIR/install.sh"
     ;;

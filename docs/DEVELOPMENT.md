@@ -370,6 +370,18 @@ systemctl status oc-oxide-daemon.service --no-pager
 ls -l /tmp/oc-oxide-daemon.sock
 ```
 
+If the service exits with status 127 after an Ubuntu upgrade, inspect its log:
+
+```sh
+journalctl -u oc-oxide-daemon.service -b --no-pager -n 30
+```
+
+`libxml2.so.2: cannot open shared object file` on Ubuntu 26.04 means a 24.04
+build is still installed. Install the 26.04 artifact, or rebuild natively with
+`make package-deb`. Reinstalling the same 24.04 artifact cannot fix the ABI
+mismatch; do not symlink `libxml2.so.16` to `libxml2.so.2`. See
+[DISTRIBUTION.md](DISTRIBUTION.md#ubuntu-compatibility) for artifact selection.
+
 ### Polkit authorization does not appear
 
 The default policy allows the active local desktop session. If authorization

@@ -2,12 +2,17 @@ name: Build Release Artifacts
 
 on:
   push:
+    branches:
+      - master
     tags:
       - "v*"
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -15,20 +20,29 @@ concurrency:
 
 jobs:
   linux:
-    name: Linux artifacts
+    name: Ubuntu ${{ matrix.ubuntu }} artifacts
     runs-on: ubuntu-24.04
+    container: ubuntu:${{ matrix.ubuntu }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["24.04", "26.04"]
     env:
       CARGO_TERM_COLOR: always
       HAS_RELEASE_GPG_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY != '' }}
-      HAS_TAURI_UPDATE_SIGNATURE: ${{ secrets.TAURI_UPDATE_SIGNATURE != '' }}
+      HAS_TAURI_UPDATE_SIGNATURE: ${{ (matrix.ubuntu == '24.04' && secrets.TAURI_UPDATE_SIGNATURE != '') || (matrix.ubuntu == '26.04' && secrets.TAURI_UPDATE_SIGNATURE_UBUNTU26 != '') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Linux build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            python3 \
             autoconf \
             automake \
             bison \
@@ -51,10 +65,10 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup toolchain install 1.89.0 --profile minimal
-          rustup default 1.89.0
-          rustc --version
-          cargo --version
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
+          sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain 1.89.0
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustc" --version
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -70,13 +84,16 @@ jobs:
             ~/.cargo/git
             ~/.cargo/registry
             target
-          key: ${{ runner.os }}-cargo-rust-1.89.0-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'bins/**/Cargo.toml', 'apps/desktop/src-tauri/Cargo.toml') }}
+          key: ${{ runner.os }}-ubuntu-${{ matrix.ubuntu }}-cargo-rust-1.89.0-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'bins/**/Cargo.toml', 'apps/desktop/src-tauri/Cargo.toml', 'crates/oc-oxide-openconnect-sys/build.rs', 'vendor/openconnect/**') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-rust-1.89.0-
+            ${{ runner.os }}-ubuntu-${{ matrix.ubuntu }}-cargo-rust-1.89.0-
 
       - name: Install desktop dependencies
         working-directory: apps/desktop
         run: npm ci
+
+      - name: Test release platform selection
+        run: python3 packaging/linux/test_release_platform.py
 
       - name: Run Rust tests
         run: cargo test --workspace --locked
@@ -90,10 +107,10 @@ jobs:
           make dist-tarball
           SKIP_BUILD=1 make package-deb
           make apt-repo
-          install -m 0755 packaging/linux/install-release.sh dist/install.sh
-          (cd dist && sha256sum install.sh > install.sh.sha256)
-          tar -C dist -czf dist/oc-oxide-apt-repo.tar.gz apt
-          (cd dist && sha256sum oc-oxide-apt-repo.tar.gz > oc-oxide-apt-repo.tar.gz.sha256)
+          if [ "${{ matrix.ubuntu }}" = "24.04" ]; then
+            install -m 0755 packaging/linux/install-release.sh dist/install.sh
+            (cd dist && sha256sum install.sh > install.sh.sha256)
+          fi
 
       - name: Import release signing key
         if: env.HAS_RELEASE_GPG_KEY == 'true'
@@ -121,27 +138,39 @@ jobs:
       - name: Generate updater manifest
         if: startsWith(github.ref, 'refs/tags/') && env.HAS_TAURI_UPDATE_SIGNATURE == 'true'
         env:
-          TAURI_UPDATE_SIGNATURE: ${{ secrets.TAURI_UPDATE_SIGNATURE }}
+          TAURI_UPDATE_SIGNATURE: ${{ matrix.ubuntu == '24.04' && secrets.TAURI_UPDATE_SIGNATURE || secrets.TAURI_UPDATE_SIGNATURE_UBUNTU26 }}
           SIGNING_KEY: ${{ secrets.RELEASE_GPG_KEY_ID }}
         run: |
+          . packaging/linux/platform.sh
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           arch=$(uname -m)
-          TAURI_UPDATE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/oc-oxide-${version}-linux-${arch}.tar.gz" \
+          TAURI_UPDATE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/oc-oxide-${version}-linux-${arch}${PLATFORM_SUFFIX}.tar.gz" \
+          TAURI_UPDATE_TARGET="linux-${arch}${PLATFORM_SUFFIX}" OUT="dist/latest${PLATFORM_SUFFIX}.json" \
             ./packaging/linux/generate-updater-json.sh
-          if [ -f dist/latest.json ] && [ "${HAS_RELEASE_GPG_KEY:-false}" = "true" ]; then
-            ./packaging/linux/sign-artifacts.sh dist/latest.json
+          if [ "${HAS_RELEASE_GPG_KEY:-false}" = "true" ]; then
+            ./packaging/linux/sign-artifacts.sh "dist/latest${PLATFORM_SUFFIX}.json"
+          fi
+
+      - name: Archive apt repository
+        env:
+          SIGNING_KEY: ${{ secrets.RELEASE_GPG_KEY_ID }}
+        run: |
+          archive="oc-oxide-apt-repo-ubuntu${{ matrix.ubuntu }}.tar.gz"
+          tar -C dist -czf "dist/$archive" apt
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
+          if [ "${HAS_RELEASE_GPG_KEY:-false}" = "true" ]; then
+            ./packaging/linux/sign-artifacts.sh "dist/$archive" "dist/$archive.sha256"
           fi
 
       - name: Verify Linux release artifacts
         run: |
           cd dist
           sha256sum -c oc-oxide-*.tar.gz.sha256
-          sha256sum -c oc-oxide-apt-repo.tar.gz.sha256
           sha256sum -c oc-oxide_*.deb.sha256
-          sha256sum -c install.sh.sha256
-          if [ -f latest.json ]; then
-            python3 -m json.tool latest.json >/dev/null
-          fi
+          if [ -f install.sh.sha256 ]; then sha256sum -c install.sh.sha256; fi
+          for manifest in latest*.json; do
+            if [ -f "$manifest" ]; then python3 -m json.tool "$manifest" >/dev/null; fi
+          done
           if grep -R "$GITHUB_WORKSPACE" ./*.sha256; then
             echo "checksum files must not contain runner-local absolute paths" >&2
             exit 1
@@ -156,6 +185,8 @@ jobs:
           cd "$dist_dir"
           sha256sum -c SHA256SUMS
           ./bin/ocx help >/dev/null
+          cd ../..
+          ./packaging/linux/smoke-test.sh dist/oc-oxide_*.deb
 
       - name: List artifacts
         run: find dist -maxdepth 1 -type f -printf '%f\n' | sort
@@ -163,40 +194,37 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: oc-oxide-linux-${{ github.run_id }}
+          name: oc-oxide-linux-ubuntu${{ matrix.ubuntu }}-${{ github.run_id }}
           if-no-files-found: error
           path: |
             dist/oc-oxide-*.tar.gz
             dist/oc-oxide-*.tar.gz.sha256
-            dist/oc-oxide-apt-repo.tar.gz
-            dist/oc-oxide-apt-repo.tar.gz.sha256
             dist/oc-oxide_*.deb
             dist/oc-oxide_*.deb.sha256
             dist/install.sh
             dist/install.sh.sha256
             dist/*.asc
-            dist/latest.json
-            dist/apt/**
+            dist/latest*.json
 
+  publish:
+    name: Publish both Ubuntu builds
+    permissions:
+      contents: write
+    needs: linux
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: oc-oxide-linux-ubuntu*-${{ github.run_id }}
+          merge-multiple: true
+          path: dist
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          assets=$(find dist -maxdepth 1 -type f \( \
-            -name 'oc-oxide-*.tar.gz' -o \
-            -name 'oc-oxide-*.tar.gz.sha256' -o \
-            -name 'oc-oxide-apt-repo.tar.gz' -o \
-            -name 'oc-oxide-apt-repo.tar.gz.sha256' -o \
-            -name 'oc-oxide_*.deb' -o \
-            -name 'oc-oxide_*.deb.sha256' -o \
-            -name 'install.sh' -o \
-            -name 'install.sh.sha256' -o \
-            -name '*.asc' -o \
-            -name 'latest.json' \
-          \) -print | sort)
-          gh release create "$GITHUB_REF_NAME" \
-            $assets \
+          gh release create "$GITHUB_REF_NAME" dist/* \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag

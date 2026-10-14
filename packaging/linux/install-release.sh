@@ -115,6 +115,22 @@ case "$VERSION" in
     ;;
 esac
 
+# Select by the running OS, including after a distribution upgrade.
+PLATFORM_SUFFIX=
+DEB_VERSION_SUFFIX=
+CURRENT_OS=$( . /etc/os-release; printf '%s:%s' "${ID:-}" "${VERSION_ID:-}" )
+case "$CURRENT_OS" in
+  ubuntu:24.04) ;;
+  ubuntu:26.04)
+    PLATFORM_SUFFIX=-ubuntu26.04
+    DEB_VERSION_SUFFIX=+ubuntu26.04
+    ;;
+  ubuntu:*)
+    printf 'Unsupported Ubuntu release: %s (expected 24.04 or 26.04)\n' "$CURRENT_OS" >&2
+    exit 1
+    ;;
+esac
+
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64)
@@ -191,7 +207,7 @@ run_or_print() {
 case "$METHOD" in
   deb)
     need sha256sum
-    name="oc-oxide_${ARTIFACT_VERSION}_${DEB_ARCH}.deb"
+    name="oc-oxide_${ARTIFACT_VERSION}${DEB_VERSION_SUFFIX}_${DEB_ARCH}.deb"
     download_checked "$name"
     if [ "$DRY_RUN" = "1" ]; then
       printf 'Would install Debian package: %s\n' "$TMPDIR/$name"
@@ -203,15 +219,15 @@ case "$METHOD" in
   tarball)
     need sha256sum
     need tar
-    name="oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}.tar.gz"
+    name="oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}${PLATFORM_SUFFIX}.tar.gz"
     download_checked "$name"
     if [ "$DRY_RUN" = "1" ]; then
       printf 'Would extract and run tarball installer from: %s\n' "$TMPDIR/$name"
-      run_or_print $SUDO "$TMPDIR/oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}/install.sh"
+      run_or_print $SUDO "$TMPDIR/oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}${PLATFORM_SUFFIX}/install.sh"
       exit 0
     fi
     run_or_print tar -xzf "$TMPDIR/$name" -C "$TMPDIR"
-    install_dir="$TMPDIR/oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}"
+    install_dir="$TMPDIR/oc-oxide-${ARTIFACT_VERSION}-linux-${LINUX_ARCH}${PLATFORM_SUFFIX}"
     if [ ! -x "$install_dir/install.sh" ]; then
       printf 'missing tarball installer: %s/install.sh\n' "$install_dir" >&2
       exit 1

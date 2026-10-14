@@ -7,10 +7,11 @@ if ! command -v dpkg-deb >/dev/null 2>&1; then
 fi
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+. "$ROOT_DIR/packaging/linux/platform.sh"
 DIST_ROOT=${DIST_ROOT:-"$ROOT_DIR/dist"}
 VERSION=${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT_DIR/Cargo.toml" | head -n 1)}
 ARCH=${ARCH:-$(uname -m)}
-DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}"}
+DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}${PLATFORM_SUFFIX}"}
 DESKTOP_ID="com.github.fudanglp.oc-oxide"
 
 case "$ARCH" in
@@ -23,8 +24,8 @@ esac
 
 STAGE_DIR="$DIST_ROOT/$DIST_NAME"
 DEB_WORK="$ROOT_DIR/target/package/deb"
-DEB_ROOT="$DEB_WORK/oc-oxide_${VERSION}_${DEB_ARCH}"
-DEB_OUT="$DIST_ROOT/oc-oxide_${VERSION}_${DEB_ARCH}.deb"
+DEB_ROOT="$DEB_WORK/oc-oxide_${VERSION}${DEB_VERSION_SUFFIX}_${DEB_ARCH}"
+DEB_OUT="$DIST_ROOT/oc-oxide_${VERSION}${DEB_VERSION_SUFFIX}_${DEB_ARCH}.deb"
 
 rm -rf "$DEB_ROOT"
 mkdir -p \
@@ -58,14 +59,37 @@ cp "$STAGE_DIR/INSTALL.md" "$DEB_ROOT/usr/share/doc/oc-oxide/INSTALL.md"
 sed 's#/usr/local/bin#/usr/bin#g' "$STAGE_DIR/systemd/oc-oxide-daemon.service" \
   > "$DEB_ROOT/usr/lib/systemd/system/oc-oxide-daemon.service"
 
+# Let dpkg derive versioned dependencies from all shipped ELF files, including
+# libopenconnect's transitive XML/TLS dependencies. It is provided by this package.
+mkdir -p "$DEB_WORK/debian"
+cat > "$DEB_WORK/debian/control" <<EOF
+Source: oc-oxide
+Section: net
+Priority: optional
+Maintainer: oc-oxide contributors <noreply@example.invalid>
+
+Package: oc-oxide
+Architecture: $DEB_ARCH
+Description: OpenConnect desktop helper
+EOF
+printf '%s\n' 'libopenconnect 5 oc-oxide' > "$DEB_WORK/debian/shlibs.local"
+SHLIB_OUTPUT=$(cd "$DEB_WORK" && dpkg-shlibdeps -O -xoc-oxide \
+  -l"$DEB_ROOT/usr/lib" \
+  -e"$DEB_ROOT/usr/libexec/oc-oxide/oc-oxide-desktop" \
+  -e"$DEB_ROOT/usr/libexec/oc-oxide/oc-oxide-daemon" \
+  -e"$DEB_ROOT/usr/libexec/oc-oxide/ocx" \
+  -e"$DEB_ROOT/usr/lib/libopenconnect.so")
+SHLIB_DEPENDS=$(printf '%s\n' "$SHLIB_OUTPUT" | sed -n 's/^shlibs:Depends=//p')
+[ -n "$SHLIB_DEPENDS" ] || { printf 'Failed to resolve shared-library dependencies\n' >&2; exit 1; }
+
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
 Package: oc-oxide
-Version: $VERSION
+Version: ${VERSION}${DEB_VERSION_SUFFIX}
 Section: net
 Priority: optional
 Architecture: $DEB_ARCH
 Maintainer: oc-oxide contributors <noreply@example.invalid>
-Depends: libc6, libssl3 | libssl1.1, libgtk-3-0, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libayatana-appindicator3-1, librsvg2-2, systemd
+Depends: $SHLIB_DEPENDS, libayatana-appindicator3-1, librsvg2-2, systemd
 Description: OpenConnect desktop helper
  oc-oxide is a Rust/Tauri OpenConnect helper with a privileged daemon,
  desktop control surface, and GitHub private-repository profile sync.

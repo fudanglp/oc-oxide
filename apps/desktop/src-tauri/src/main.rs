@@ -814,11 +814,47 @@ fn preferred_update_method() -> UpdateInstallMethod {
 }
 
 fn update_asset_name(version: &str, method: UpdateInstallMethod) -> Result<String, String> {
+    let os_release = fs::read_to_string("/etc/os-release")
+        .map_err(|err| format!("failed to detect update platform: {err}"))?;
+    update_asset_name_for_os(version, method, &os_release)
+}
+
+fn update_asset_name_for_os(
+    version: &str,
+    method: UpdateInstallMethod,
+    os_release: &str,
+) -> Result<String, String> {
+    let field = |name: &str| {
+        os_release
+            .lines()
+            .find_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                (key == name).then(|| value.trim_matches(['"', '\'']))
+            })
+            .unwrap_or_default()
+    };
+    let ubuntu26 = match (field("ID"), field("VERSION_ID")) {
+        ("ubuntu", "26.04") => true,
+        ("ubuntu", "24.04") => false,
+        ("ubuntu", release) => {
+            return Err(format!(
+                "Unsupported Ubuntu release: {release} (expected 24.04 or 26.04)"
+            ))
+        }
+        _ => false,
+    };
     let version = version.trim_start_matches('v');
     match method {
-        UpdateInstallMethod::Deb => Ok(format!("oc-oxide_{version}_{}.deb", deb_arch()?)),
+        UpdateInstallMethod::Deb => {
+            let suffix = if ubuntu26 { "+ubuntu26.04" } else { "" };
+            Ok(format!("oc-oxide_{version}{suffix}_{}.deb", deb_arch()?))
+        }
         UpdateInstallMethod::Tarball => {
-            Ok(format!("oc-oxide-{version}-linux-{}.tar.gz", linux_arch()?))
+            let suffix = if ubuntu26 { "-ubuntu26.04" } else { "" };
+            Ok(format!(
+                "oc-oxide-{version}-linux-{}{suffix}.tar.gz",
+                linux_arch()?
+            ))
         }
     }
 }
@@ -2776,12 +2812,12 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_output_detail, duplicate_profile_name, github_device_flow_start_result,
+        command_output_detail, deb_arch, duplicate_profile_name, github_device_flow_start_result,
         github_release_asset_url, github_sync_status_response, github_sync_upload_error,
-        load_github_sync_history_from_path, parse_release_tag, profiles_from_dir,
+        linux_arch, load_github_sync_history_from_path, parse_release_tag, profiles_from_dir,
         record_github_sync_history_at, render_profile_toml, render_sync_profile_toml,
         restored_conflict_profile_name, stored_vpn_password_field, sync_profile_document,
-        tray_status_text, update_asset_name, version_is_newer, CreateProfileInput,
+        tray_status_text, update_asset_name_for_os, version_is_newer, CreateProfileInput,
         GithubSyncAuthState, GithubSyncManifestState, UpdateInstallMethod,
     };
     use oc_oxide_config::parse_toml_vpn_profile;
@@ -3069,29 +3105,30 @@ mod tests {
 
     #[test]
     fn update_asset_name_matches_release_packaging_names() {
-        #[cfg(target_arch = "x86_64")]
-        {
+        let ubuntu24 = "ID=ubuntu\nVERSION_ID=\"24.04\"\n";
+        let ubuntu26 = "ID=ubuntu\nVERSION_ID=\"26.04\"\n";
+        for (os, deb_suffix, tar_suffix) in [
+            (ubuntu24, "", ""),
+            (ubuntu26, "+ubuntu26.04", "-ubuntu26.04"),
+        ] {
             assert_eq!(
-                update_asset_name("v0.1.2", UpdateInstallMethod::Deb).unwrap(),
-                "oc-oxide_0.1.2_amd64.deb"
+                update_asset_name_for_os("v0.1.3", UpdateInstallMethod::Deb, os).unwrap(),
+                format!("oc-oxide_0.1.3{deb_suffix}_{}.deb", deb_arch().unwrap())
             );
             assert_eq!(
-                update_asset_name("0.1.2", UpdateInstallMethod::Tarball).unwrap(),
-                "oc-oxide-0.1.2-linux-x86_64.tar.gz"
-            );
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            assert_eq!(
-                update_asset_name("v0.1.2", UpdateInstallMethod::Deb).unwrap(),
-                "oc-oxide_0.1.2_arm64.deb"
-            );
-            assert_eq!(
-                update_asset_name("0.1.2", UpdateInstallMethod::Tarball).unwrap(),
-                "oc-oxide-0.1.2-linux-aarch64.tar.gz"
+                update_asset_name_for_os("0.1.3", UpdateInstallMethod::Tarball, os).unwrap(),
+                format!(
+                    "oc-oxide-0.1.3-linux-{}{tar_suffix}.tar.gz",
+                    linux_arch().unwrap()
+                )
             );
         }
+        assert!(update_asset_name_for_os(
+            "0.1.3",
+            UpdateInstallMethod::Deb,
+            "ID=ubuntu\nVERSION_ID=28.04\n"
+        )
+        .is_err());
     }
 
     #[test]

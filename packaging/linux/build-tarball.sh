@@ -2,10 +2,11 @@
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+. "$ROOT_DIR/packaging/linux/platform.sh"
 DIST_ROOT=${DIST_ROOT:-"$ROOT_DIR/dist"}
 VERSION=${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT_DIR/Cargo.toml" | head -n 1)}
 ARCH=${ARCH:-$(uname -m)}
-DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}"}
+DIST_NAME=${DIST_NAME:-"oc-oxide-${VERSION}-linux-${ARCH}${PLATFORM_SUFFIX}"}
 TARBALL="$DIST_ROOT/${DIST_NAME}.tar.gz"
 
 "$ROOT_DIR/packaging/dist-local.sh"
