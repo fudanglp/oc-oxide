@@ -95,9 +95,25 @@ fetch() {
   fi
 }
 
+# Resolve the latest release through the github.com releases/latest redirect
+# instead of the REST API. api.github.com allows only 60 unauthenticated
+# requests per hour per IP and answers 403 once exhausted, which broke
+# installs behind shared egress IPs. The redirect is served by the same web
+# tier as release asset downloads and has no per-IP API quota.
+resolve_latest_version() {
+  latest_url="https://github.com/$REPO/releases/latest"
+  location=
+  if command -v curl >/dev/null 2>&1; then
+    location=$(curl -fsS -o /dev/null -w '%{redirect_url}' --proto '=https' --tlsv1.2 "$latest_url" 2>/dev/null || printf '')
+  elif command -v wget >/dev/null 2>&1; then
+    location=$(wget -q --server-response --spider --max-redirect 0 "$latest_url" 2>&1 | sed -n 's/^[[:space:]]*Location:[[:space:]]*//p' | tail -n 1)
+  fi
+  [ -n "$location" ] || return 1
+  printf '%s\n' "$location" | tr -d '\r' | sed -n 's|.*/releases/tag/\([^/?#][^/?#]*\)$|\1|p'
+}
+
 if [ -z "$VERSION" ]; then
-  latest_json=$(fetch "https://api.github.com/repos/$REPO/releases/latest")
-  VERSION=$(printf '%s\n' "$latest_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+  VERSION=$(resolve_latest_version)
   if [ -z "$VERSION" ]; then
     printf 'could not resolve latest release tag for %s\n' "$REPO" >&2
     exit 1
